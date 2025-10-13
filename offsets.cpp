@@ -46,7 +46,7 @@ SDL_bool savedRelativeMouseMode = SDL_TRUE;
 SDL_bool savedGrabMode = SDL_TRUE;
 
 bool LoadOffsets() {
-    std::ifstream file("C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\offsets.txt");
+    std::ifstream file("C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\Offsets.txt");
     if (!file.is_open()) {
         debugLog += "[ERROR] Failed to open offsets.txt\n";
         std::cout << "[ERROR] Failed to open offsets.txt" << std::endl;

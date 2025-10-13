@@ -307,6 +307,9 @@ void RenderNotifications();
 template<typename T>
 inline T ReadMemory(uintptr_t address) {
     T value = {};
+    if (!address || address < 0x10000) { // Basic sanity check
+        return value;
+    }
     ReadProcessMemory(GetCurrentProcess(), (LPCVOID)address, &value, sizeof(T), nullptr);
     return value;
 }

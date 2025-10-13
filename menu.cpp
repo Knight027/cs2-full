@@ -41,7 +41,7 @@ void RenderNotifications() {
 }
 
 void SaveConfig() {
-    std::ofstream file("C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\config.txt");
+    std::ofstream file("C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\config.txt");
     if (file.is_open()) {
         file << "espEnabled=" << espEnabled << "\n";
         file << "aimbotEnabled=" << aimbotEnabled << "\n";
@@ -106,7 +106,7 @@ void SaveConfig() {
 }
 
 void LoadConfig() {
-    std::ifstream file("C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\config.txt");
+    std::ifstream file("C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\config.txt");
     if (!file.is_open()) {
         debugLog += "[ERROR] Failed to open config.txt\n";
         AddNotification("Failed to Load Config", 3.0f, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // New: Error notification
@@ -535,9 +535,9 @@ void RenderMenu() {
             headCircleColor = ImVec4(1.0f, 0.0f, 1.0f, 1.0f);
             glowColor = ImVec4(0.5f, 0.0f, 0.5f, 0.5f);
             fovCircleColor = ImVec4(1.0f, 1.0f, 1.0f, 0.4f);
-            hitSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\hitsound.mp3";
-            headSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\headshot.mp3";
-            killSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\killsound.mp3";
+            hitSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\hitsound.mp3";
+            headSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\headsound.mp3";
+            killSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\killsound.mp3";
             soundVolume = 1000.0f;
             debugLog += "[INFO] Configuration reset to defaults\n";
             AddNotification("Reset to Defaults", 3.0f, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // New: Notification

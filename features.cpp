@@ -145,9 +145,9 @@ uintptr_t GetPawnByIndex(int index) {
     return pawn;
 }
 
-std::string hitSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\hitsound.mp3";
-std::string headSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\headshot.mp3";
-std::string killSoundPath = "C:\\Users\\dionr\\Downloads\\r6\\cs2WoW\\launch\\killsound.mp3";
+std::string hitSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\sounds\\hitsound.mp3";
+std::string headSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\sounds\\headsound.mp3";
+std::string killSoundPath = "C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\sounds\\killsound.mp3";
 float soundVolume = 1000.0f; // MCI volume (0-1000)
 
 void PlayMP3(const std::string& filePath) {
@@ -274,10 +274,18 @@ std::vector<std::string> GetSpectators() {
 
 LocalPlayer GetLocalPlayer() {
     LocalPlayer lp = {};
+
+    // Check if client base is valid first
+    if (!clientBase) {
+        debugLog += "[ERROR] GetLocalPlayer: Invalid client base\n";
+        return lp;
+    }
+
     lp.pawn = ReadMemory<uintptr_t>(clientBase + localPlayerOffset);
 
+    // If pawn is 0, we're probably in menu/not in game
     if (!lp.pawn) {
-        debugLog += "[ERROR] GetLocalPlayer: Invalid local player pawn\n";
+        debugLog += "[INFO] GetLocalPlayer: No local player pawn (probably in menu)\n";
         return lp;
     }
 
@@ -285,126 +293,125 @@ LocalPlayer GetLocalPlayer() {
     uintptr_t sceneNode = ReadMemory<uintptr_t>(lp.pawn + sceneNodeOffset);
     if (!sceneNode) {
         std::stringstream ss;
-        ss << "[ERROR] GetLocalPlayer: Invalid scene node for pawn 0x" << std::hex << lp.pawn << "\n";
+        ss << "[INFO] GetLocalPlayer: Invalid scene node for pawn 0x" << std::hex << lp.pawn << " (probably in menu)\n";
         debugLog += ss.str();
         return lp;
     }
-    uint64_t client_base = (uint64_t)GetModuleHandleA("client.dll");
-    uint64_t local = *(uint64_t*)(client_base + 0x1BDFD10);
-    lp.origin = ReadMemory<Vector3>(sceneNode + originOffset);
-    lp.viewAngles = ReadMemory<Vector3>(lp.pawn + viewAnglesOffset); // Assuming this offset exists
-    lp.team = ReadMemory<int>(local + teamOffset);
-    lp.health = ReadMemory<int>(lp.pawn + healthOffset); // Added: Read local health
 
-    // New: Read active weapon and ammo
-    lp.activeWeapon = ReadMemory<uintptr_t>(lp.pawn + activeWeaponOffset);
-    lp.ammo = lp.activeWeapon ? ReadMemory<int>(lp.activeWeapon + ammoOffset) : 0;
-
-    // Validate team ID (assuming CS2 uses 2 for T, 3 for CT, 0/1 for invalid/spectator)
-    if (lp.team != 2 && lp.team != 3) {
-        debugLog += "[WARNING] GetLocalPlayer: Invalid team ID " +
-            std::to_string(lp.team) + " for pawn 0x" + std::to_string(lp.pawn) + "\n";
-        lp.team = 0; // Set to invalid to prevent incorrect team-based rendering
-    }
-
-    // Validate view angles (basic sanity check: pitch -90 to 90, yaw -180 to 180)
-    if (lp.viewAngles.x < -90.0f || lp.viewAngles.x > 90.0f ||
-        lp.viewAngles.y < -180.0f || lp.viewAngles.y > 180.0f) {
-        debugLog += "[WARNING] GetLocalPlayer: Invalid view angles (" +
-            std::to_string(lp.viewAngles.x) + "," + std::to_string(lp.viewAngles.y) +
-            ") for pawn 0x" + std::to_string(lp.pawn) + "\n";
-        lp.viewAngles = { 0.0f, 0.0f, 0.0f }; // Reset to prevent radar rotation issues
-    }
-
-    // Read local controller for player index
-    uintptr_t localController = ReadMemory<uintptr_t>(clientBase + localPlayerControllerOffset);
-    if (!localController) {
-        debugLog += "[ERROR] GetLocalPlayer: Invalid local controller\n";
+    // Try to read origin - if this fails, we're likely in menu
+    Vector3 testOrigin = ReadMemory<Vector3>(sceneNode + originOffset);
+    if (testOrigin.x == 0.0f && testOrigin.y == 0.0f && testOrigin.z == 0.0f) {
+        debugLog += "[INFO] GetLocalPlayer: Zero origin (probably in menu)\n";
         return lp;
     }
 
-    lp.index = ReadMemory<int>(localController + playerSlotOffset);
+    lp.origin = testOrigin;
+    lp.viewAngles = ReadMemory<Vector3>(lp.pawn + viewAnglesOffset);
+    lp.team = ReadMemory<int>(lp.pawn + teamOffset);
+    lp.health = ReadMemory<int>(lp.pawn + healthOffset);
 
-    // Validate player index (assuming CS2 player slots are 0-63 for valid players)
-    if (lp.index < 0 || lp.index >= 64) {
-        debugLog += "[WARNING] GetLocalPlayer: Invalid player index " +
-            std::to_string(lp.index) + " for controller 0x" +
-            std::to_string(localController) + "\n";
-        lp.index = -1; // Set to invalid to prevent incorrect visibility checks
+    // Read active weapon and ammo (these might be 0 in menu)
+    lp.activeWeapon = ReadMemory<uintptr_t>(lp.pawn + activeWeaponOffset);
+    lp.ammo = lp.activeWeapon ? ReadMemory<int>(lp.activeWeapon + ammoOffset) : 0;
+
+    // Read local controller for player index
+    uintptr_t localController = ReadMemory<uintptr_t>(clientBase + localPlayerControllerOffset);
+    if (localController) {
+        lp.index = ReadMemory<int>(localController + playerSlotOffset);
     }
-
-    // Log successful retrieval
-    debugLog += "[DEBUG] GetLocalPlayer: origin=(" +
-        std::to_string(lp.origin.x) + "," +
-        std::to_string(lp.origin.y) + "," +
-        std::to_string(lp.origin.z) +
-        "), team=" + std::to_string(lp.team) +
-        ", index=" + std::to_string(lp.index) +
-        ", viewAngles=(" + std::to_string(lp.viewAngles.x) + "," +
-        std::to_string(lp.viewAngles.y) + ")\n";
+    else {
+        lp.index = -1;
+        debugLog += "[INFO] GetLocalPlayer: No local controller (probably in menu)\n";
+    }
 
     return lp;
 }
 
 std::vector<Entity> GetEntities() {
     std::vector<Entity> entities;
+
+    if (!clientBase) {
+        return entities;
+    }
+
     uintptr_t entityList = ReadMemory<uintptr_t>(clientBase + entityListOffset);
+    if (!entityList) {
+        return entities;
+    }
+
     LocalPlayer lp = GetLocalPlayer();
+
     for (int i = 1; i < 64; i++) {
         uintptr_t list_entry = ReadMemory<uintptr_t>(entityList + 0x8 * (i >> 9) + 0x10);
         if (!list_entry) continue;
+
         uintptr_t controller = ReadMemory<uintptr_t>(list_entry + 0x78 * (i & 0x1FF));
         if (!controller) continue;
+
         uint32_t pawn_handle = ReadMemory<uint32_t>(controller + pawnHandleOffset);
-        if (!pawn_handle) continue;
+        if (!pawn_handle || pawn_handle == 0xFFFFFFFF) continue;
+
         uintptr_t p_index = pawn_handle & 0x7FFF;
         uintptr_t list_entry2 = ReadMemory<uintptr_t>(entityList + 0x8 * (p_index >> 9) + 0x10);
         if (!list_entry2) continue;
+
         uintptr_t entity = ReadMemory<uintptr_t>(list_entry2 + 0x78 * (p_index & 0x1FF));
-        if (entity) {
-            Entity e;
-            e.health = ReadMemory<int>(entity + healthOffset);
-            uintptr_t sceneNode = ReadMemory<uintptr_t>(entity + sceneNodeOffset);
-            e.origin = ReadMemory<Vector3>(sceneNode + originOffset);
-            e.team = ReadMemory<int>(entity + teamOffset);
-            e.boneMatrix = ReadMemory<uintptr_t>(sceneNode + boneMatrixOffset);
-            // Fixed name reading: m_sSanitizedPlayerName is a pointer to the string
-            uintptr_t namePtr = ReadMemory<uintptr_t>(controller + playerNameOffset);
-            if (namePtr) {
-                ReadProcessMemory(GetCurrentProcess(), (LPCVOID)namePtr, e.name, 64, nullptr);
-                e.name[63] = '\0'; // Ensure null-termination
-            }
-            else {
-                strcpy_s(e.name, "Unknown"); // Fallback if pointer is invalid
-            }
-            uintptr_t activeWeapon = ReadMemory<uintptr_t>(entity + activeWeaponOffset);
-            if (activeWeapon) {
-                e.weaponDefIndex = ReadMemory<int>(activeWeapon + itemDefIndexOffset);
-                e.ammo = ReadMemory<int>(activeWeapon + ammoOffset);
-            }
-            else {
-                e.weaponDefIndex = 0;
-                e.ammo = 0;
-            }
-            e.armor = ReadMemory<int>(entity + armorOffset);
-            e.hasDefuser = ReadMemory<bool>(entity + hasDefuserOffset);
-            e.hasHelmet = ReadMemory<bool>(entity + hasHelmetOffset);
-            e.flashDuration = ReadMemory<float>(entity + flashDurationOffset);
-            e.scoped = ReadMemory<bool>(entity + scopedOffset);
-            e.defusing = ReadMemory<bool>(entity + isDefusingOffset);
+        if (!entity) continue;
+
+        // Check if this entity is valid by reading health
+        int health = ReadMemory<int>(entity + healthOffset);
+        if (health < 0 || health > 100) continue; // Skip invalid entities
+
+        Entity e;
+        e.health = health;
+
+        uintptr_t sceneNode = ReadMemory<uintptr_t>(entity + sceneNodeOffset);
+        if (!sceneNode) continue;
+
+        e.origin = ReadMemory<Vector3>(sceneNode + originOffset);
+        e.team = ReadMemory<int>(entity + teamOffset);
+        e.boneMatrix = ReadMemory<uintptr_t>(sceneNode + boneMatrixOffset);
+
+        // Read name safely
+        uintptr_t namePtr = ReadMemory<uintptr_t>(controller + playerNameOffset);
+        if (namePtr) {
+            ReadProcessMemory(GetCurrentProcess(), (LPCVOID)namePtr, e.name, 64, nullptr);
+            e.name[63] = '\0';
+        }
+        else {
+            strcpy_s(e.name, "Unknown");
+        }
+
+        uintptr_t activeWeapon = ReadMemory<uintptr_t>(entity + activeWeaponOffset);
+        if (activeWeapon) {
+            e.weaponDefIndex = ReadMemory<int>(activeWeapon + itemDefIndexOffset);
+            e.ammo = ReadMemory<int>(activeWeapon + ammoOffset);
+        }
+        else {
+            e.weaponDefIndex = 0;
+            e.ammo = 0;
+        }
+
+        e.armor = ReadMemory<int>(entity + armorOffset);
+        e.hasDefuser = ReadMemory<bool>(entity + hasDefuserOffset);
+        e.hasHelmet = ReadMemory<bool>(entity + hasHelmetOffset);
+        e.flashDuration = ReadMemory<float>(entity + flashDurationOffset);
+        e.scoped = ReadMemory<bool>(entity + scopedOffset);
+        e.defusing = ReadMemory<bool>(entity + isDefusingOffset);
+
+        // Visibility check - only if we have a valid local player index
+        if (lp.index >= 0 && lp.index < 64) {
             uintptr_t spottedAddr = entity + entitySpottedStateOffset + 0x8 + (lp.index * sizeof(bool));
             e.visible = ReadMemory<bool>(spottedAddr);
-            e.pawn = entity; // Added for hitsound
-            e.lastHitGroup = ReadMemory<int>(entity + lastHitGroupOffset);
-            e.visible = ReadMemory<bool>(entity + entitySpottedStateOffset); // Placeholder
-            if (e.health >= 0 && e.health <= 100) {  // Include dead entities (health == 0)
-                entities.push_back(e);
-                debugLog += "[DEBUG] Entity " + std::to_string(i) + ": health=" + std::to_string(e.health) +
-                    ", armor=" + std::to_string(e.armor) + ", ammo=" + std::to_string(e.ammo) +
-                    ", origin=(" + std::to_string(e.origin.x) + "," + std::to_string(e.origin.y) + "," + std::to_string(e.origin.z) +
-                    "), team=" + std::to_string(e.team) + ", name=" + std::string(e.name) + "\n";
-            }
         }
+        else {
+            e.visible = false;
+        }
+
+        e.pawn = entity;
+        e.lastHitGroup = ReadMemory<int>(entity + lastHitGroupOffset);
+
+        entities.push_back(e);
     }
     return entities;
 }
@@ -529,31 +536,6 @@ void Render3DBox(Entity& e, Matrix4x4 viewMatrix, float screenWidth, float scree
     }
 }
 
-void RenderGlow(Entity& e, Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImDrawList* drawList) {
-    Vector3 footPos = e.origin;
-    Vector3 headPos = e.origin;
-    headPos.z += 72.0f;
-    Vector3 screenFoot, screenHead;
-    if (WorldToScreen(footPos, screenFoot, viewMatrix, screenWidth, screenHeight) &&
-        WorldToScreen(headPos, screenHead, viewMatrix, screenWidth, screenHeight)) {
-        float height = screenFoot.y - screenHead.y;
-        float width = height / 2.0f;
-        float x = screenHead.x - width / 2.0f;
-        ImU32 glowCol = IM_COL32(glowColor.x * 255, glowColor.y * 255, glowColor.z * 255, glowOpacity * 255);
-        ImU32 outlineCol = IM_COL32(0, 0, 0, 255); // Black outline for glow
-
-        // Draw outline slightly larger
-        if (outlineEnabled) {
-            drawList->AddRect(ImVec2(x - 4, screenHead.y - 4), ImVec2(x + width + 4, screenFoot.y + 4),
-                outlineCol, boxRounding, ImDrawFlags_RoundCornersAll, boxThickness + 1.0f);
-        }
-
-        // Draw glow rect with rounding for cleaner look
-        drawList->AddRect(ImVec2(x - 3, screenHead.y - 3), ImVec2(x + width + 3, screenFoot.y + 3),
-            glowCol, boxRounding, ImDrawFlags_RoundCornersAll, boxThickness + 1.5f);
-    }
-}
-
 void RenderRadar(const LocalPlayer& lp, const std::vector<Entity>& entities, ImDrawList* drawList, float screenWidth, float screenHeight) {
     float radarSize = 150.0f;
     float radarX = screenWidth - radarSize - 10.0f;
@@ -655,6 +637,9 @@ void RunAimbot() {
 }
 
 void ApplyFeatures(const LocalPlayer& lp, const std::vector<Entity>& entities) {
+    if (!lp.pawn) {
+        return;
+    }
     static std::map<uintptr_t, int> previousHealth; // Assuming this already exists for health tracking
     static int prevLocalAmmo = -1; // New: Track local player's previous ammo
     static float lastFireTime = 0.0f; // New: Timestamp of last local fire
@@ -840,7 +825,22 @@ void RenderHitmarkers(Matrix4x4 viewMatrix, float screenWidth, float screenHeigh
 }
 
 void RenderESP() {
+    if (!clientBase) {
+        return;
+    }
     LocalPlayer lp = GetLocalPlayer();
+
+    if (!lp.pawn) {
+        // Just render the overlay but skip entity rendering
+        ImGuiIO& io = ImGui::GetIO();
+        auto drawList = ImGui::GetBackgroundDrawList();
+        drawList->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(200, 50),
+            IM_COL32(0, 0, 0, 200), IM_COL32(0, 0, 0, 200), IM_COL32(20, 20, 20, 200), IM_COL32(20, 20, 20, 200));
+        drawList->AddText(ImVec2(10, 10), IM_COL32(255, 255, 255, 255), "CS2 WoW Cheat v1.0");
+        drawList->AddText(ImVec2(10, 30), IM_COL32(200, 200, 200, 255), "In Menu - Waiting for Game");
+        return;
+    }
+
     Matrix4x4 viewMatrix = ReadMemory<Matrix4x4>(clientBase + viewMatrixOffset);
     ImGuiIO& io = ImGui::GetIO();
     float screenWidth = io.DisplaySize.x;
@@ -969,23 +969,27 @@ void RenderESP() {
         ImU32 boxColor = (e.team == lp.team) ? IM_COL32(teammateColor.x * 255, teammateColor.y * 255, teammateColor.z * 255, 255)
             : (e.visible ? IM_COL32(visibleColor.x * 255, visibleColor.y * 255, visibleColor.z * 255, 255)
                 : IM_COL32(espColor.x * 255, espColor.y * 255, espColor.z * 255, 255));
-        Vector3 footPos = e.origin;
-        Vector3 headPos = e.origin;
-        headPos.z += 72.0f;
+        Vector3 footPos = GetBonePosition(e.boneMatrix, bone_pelvis); // Use actual head bone position
+        Vector3 headPos = GetBonePosition(e.boneMatrix, bone_head); // Use actual head bone position
+        headPos.z += 5.0f;
+        footPos.z -= 30.f;
         Vector3 screenFoot, screenHead;
         if (WorldToScreen(footPos, screenFoot, viewMatrix, screenWidth, screenHeight) &&
             WorldToScreen(headPos, screenHead, viewMatrix, screenWidth, screenHeight)) {
+
+            // Calculate the actual height from feet to head
             float height = screenFoot.y - screenHead.y;
-            float width = height / 2.0f;
+            float width = height / 2.0f; // Maintain aspect ratio
+
+            // Position the box so bottom is exactly at feet
             float x = screenHead.x - width / 2.0f;
+            float boxTop = screenFoot.y - height; // Calculate top from bottom position
+            float boxBottom = screenFoot.y; // Bottom is exactly at feet
 
-            if (glowESPEnabled) {
-                RenderGlow(e, viewMatrix, screenWidth, screenHeight, drawList);
-            }
-
-            ImU32 outlineCol = IM_COL32(0, 0, 0, 255); // Black outline
-            ImVec2 boxMin(x, screenHead.y);
-            ImVec2 boxMax(x + width, screenFoot.y);
+            ImU32 outlineCol = IM_COL32(0, 0, 0, 155); // Black outline
+            // Now use boxTop and boxBottom for drawing
+            ImVec2 boxMin(x, boxTop);
+            ImVec2 boxMax(x + width, boxBottom);
 
             if (box3DEnabled) {
                 Render3DBox(e, viewMatrix, screenWidth, screenHeight, drawList, boxColor);
@@ -993,14 +997,14 @@ void RenderESP() {
             else {
                 // Rounded box with optional outline
                 if (outlineEnabled) {
-                    drawList->AddRect(ImVec2(x - 1, screenHead.y - 1), ImVec2(x + width + 1, screenFoot.y + 1),
+                    drawList->AddRect(ImVec2(x - 1, boxTop - 1), ImVec2(x + width + 1, boxBottom + 1),
                         outlineCol, boxRounding, ImDrawFlags_RoundCornersAll, boxThickness + 1.0f);
                 }
                 drawList->AddRect(boxMin, boxMax, boxColor, boxRounding, ImDrawFlags_RoundCornersAll, boxThickness);
             }
 
             // Name with shadow
-            DrawTextWithShadow(drawList, ImVec2(x, screenHead.y - 20), boxColor, e.name);
+            DrawTextWithShadow(drawList, ImVec2(x, boxTop - 20), boxColor, e.name);
 
             // Weapon text with shadow
             char weaponText[64];
@@ -1010,7 +1014,7 @@ void RenderESP() {
             else {
                 sprintf_s(weaponText, "%s", GetWeaponName(e.weaponDefIndex));
             }
-            DrawTextWithShadow(drawList, ImVec2(x, screenHead.y - 35), boxColor, weaponText);
+            DrawTextWithShadow(drawList, ImVec2(x, boxTop - 35), boxColor, weaponText);
 
             if (healthBarEnabled || healthTextEnabled) {
                 // Health animation
@@ -1030,8 +1034,8 @@ void RenderESP() {
 
                 float barWidth = 6.0f;
                 ImU32 healthColor = IM_COL32(255 * (1.0f - healthFrac), 255 * healthFrac, 0, 255);
-                ImVec2 healthBgMin(x - barWidth - 3, screenHead.y);
-                ImVec2 healthBgMax(x - 3, screenFoot.y);
+                ImVec2 healthBgMin(x - barWidth - 3, boxTop);
+                ImVec2 healthBgMax(x - 3, boxBottom);
                 ImVec2 healthFillMin(x - barWidth - 3, screenHead.y + height * (1.0f - healthFrac));
                 if (healthBarEnabled) {
                     // Health bar background with rounding and outline
@@ -1053,8 +1057,8 @@ void RenderESP() {
                 float barWidth = 6.0f;
                 float armorFrac = static_cast<float>(e.armor) / 100.0f;
                 ImU32 armorColor = IM_COL32(0, 100, 255, 255);
-                ImVec2 armorBgMin(x + width + 3, screenHead.y);
-                ImVec2 armorBgMax(x + width + barWidth + 3, screenFoot.y);
+                ImVec2 armorBgMin(x + width + 3, boxTop);
+                ImVec2 armorBgMax(x + width + barWidth + 3, boxBottom);
                 ImVec2 armorFillMin(x + width + 3, screenHead.y + height * (1.0f - armorFrac));
                 // Armor bar with rounding and outline
                 if (outlineEnabled) {
@@ -1068,18 +1072,22 @@ void RenderESP() {
             if (snaplinesEnabled) {
                 ImU32 snapColor = IM_COL32(snaplineColor.x * 255, snaplineColor.y * 255, snaplineColor.z * 255, snaplineColor.w * 255);
                 ImVec2 from = ImVec2(screenWidth / 2.0f, screenHeight);
+
+                // Connect to the bottom center of the box (feet position)
+                ImVec2 to = ImVec2(x + width / 2.0f, boxBottom);
+
                 // Outline for snaplines (thicker black line first)
                 if (outlineEnabled) {
-                    drawList->AddLine(from, ImVec2(screenFoot.x, screenFoot.y), outlineCol, snaplineThickness + 1.0f);
+                    drawList->AddLine(from, to, outlineCol, snaplineThickness + 1.0f);
                 }
-                drawList->AddLine(from, ImVec2(screenFoot.x, screenFoot.y), snapColor, snaplineThickness);
+                drawList->AddLine(from, to, snapColor, snaplineThickness);
             }
 
             if (distanceEnabled) {
                 float dist = sqrtf(powf(lp.origin.x - e.origin.x, 2) + powf(lp.origin.y - e.origin.y, 2) + powf(lp.origin.z - e.origin.z, 2)) / 100.0f;
                 char distText[32];
                 sprintf_s(distText, "%.0fm", dist);
-                DrawTextWithShadow(drawList, ImVec2(x, screenFoot.y + 10), boxColor, distText);
+                DrawTextWithShadow(drawList, ImVec2(x, boxBottom + 10), boxColor, distText);
             }
 
             if (boneESPEnabled && e.boneMatrix) {
@@ -1122,7 +1130,7 @@ void RenderESP() {
                 if (e.flashDuration > 0) flagsStr += "FLASHED ";
                 if (e.defusing) flagsStr += "DEFUSING ";
                 if (!flagsStr.empty()) {
-                    DrawTextWithShadow(drawList, ImVec2(x, screenFoot.y + 25), boxColor, flagsStr.c_str());
+                    DrawTextWithShadow(drawList, ImVec2(x, boxBottom + 25), boxColor, flagsStr.c_str());
                 }
             }
 
