@@ -6,6 +6,36 @@ IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 PresentFn oPresent = nullptr;
 WndProcFn oWndProc = nullptr;
+CreateMoveFn oCreateMove = nullptr;
+
+// Add CreateMove hook setup
+bool SetupCreateMoveHook() {
+    std::cout << "[DEBUG] Setting up CreateMove hook" << std::endl;
+
+    if (!createMoveAddr) {
+        std::cout << "[ERROR] CreateMove address not found" << std::endl;
+        debugLog += "[ERROR] CreateMove address not found\n";
+        return false;
+    }
+
+    std::cout << "[DEBUG] CreateMove address: 0x" << std::hex << createMoveAddr << std::endl;
+
+    if (MH_CreateHook((LPVOID)createMoveAddr, &HK_CreateMove, (LPVOID*)&oCreateMove) != MH_OK) {
+        std::cout << "[ERROR] Failed to create CreateMove hook" << std::endl;
+        debugLog += "[ERROR] Failed to create CreateMove hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)createMoveAddr) != MH_OK) {
+        std::cout << "[ERROR] Failed to enable CreateMove hook" << std::endl;
+        debugLog += "[ERROR] Failed to enable CreateMove hook\n";
+        return false;
+    }
+
+    std::cout << "[DEBUG] CreateMove hook set up successfully at 0x" << std::hex << createMoveAddr << std::endl;
+    debugLog += "[DEBUG] CreateMove hook set up successfully\n";
+    return true;
+}
 
 LRESULT CALLBACK hkWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);  // Always pass to ImGui
@@ -97,7 +127,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
         io.MouseDrawCursor = false;  // Hide ImGui cursor when menu closed
     }
 
-    RenderMenu();
+    RenderCleanMenu();
     RenderESP();
     RenderNotifications(); // New: Render notifications
 
@@ -232,6 +262,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             if (!SetupHook()) {
                 std::cout << "[ERROR] SetupHook failed in DllMain" << std::endl;
                 return FALSE;
+            }
+            if (!SetupCreateMoveHook()) {
+                std::cout << "[WARNING] CreateMove hook failed, FOV changer will not work" << std::endl;
             }
             CreateThread(NULL, 0, KeyThread, NULL, 0, NULL);
         }

@@ -36,6 +36,8 @@ uintptr_t crosshairIDOffset = 0;
 uintptr_t observerModeOffset = 0; // NEW: For spectator list
 uintptr_t observerTargetOffset = 0; // NEW: For spectator list
 uintptr_t observerServicesOffset = 0; // NEW: m_pObserverServices
+uintptr_t createMoveAddr = 0;
+uintptr_t fovOffset = 0;
 SDL_GetGrabbedWindowFn SDL_GetGrabbedWindow = nullptr;
 SDL_GetWindowRelativeMouseModeFn SDL_GetWindowRelativeMouseMode = nullptr;
 SDL_SetWindowRelativeMouseModeFn SDL_SetWindowRelativeMouseMode = nullptr;
@@ -44,6 +46,54 @@ SDL_GetWindowGrabFn SDL_GetWindowGrab = nullptr;
 SDL_ShowCursorFn SDL_ShowCursor = nullptr;
 SDL_bool savedRelativeMouseMode = SDL_TRUE;
 SDL_bool savedGrabMode = SDL_TRUE;
+
+uintptr_t PatternScan(const char* module, const char* pattern) {
+    static auto patternToBytes = [](const char* pattern) {
+        auto bytes = std::vector<int>{};
+        auto start = const_cast<char*>(pattern);
+        auto end = const_cast<char*>(pattern) + strlen(pattern);
+
+        for (auto current = start; current < end; ++current) {
+            if (*current == '?') {
+                ++current;
+                if (*current == '?') ++current;
+                bytes.push_back(-1);
+            }
+            else {
+                bytes.push_back(strtoul(current, &current, 16));
+            }
+        }
+        return bytes;
+        };
+
+    HMODULE hModule = GetModuleHandleA(module);
+    if (!hModule) return 0;
+
+    auto dosHeader = (PIMAGE_DOS_HEADER)hModule;
+    auto ntHeaders = (PIMAGE_NT_HEADERS)((uint8_t*)dosHeader + dosHeader->e_lfanew);
+    auto sizeOfImage = ntHeaders->OptionalHeader.SizeOfImage;
+    auto patternBytes = patternToBytes(pattern);
+    auto scanBytes = reinterpret_cast<uint8_t*>(hModule);
+
+    auto s = patternBytes.size();
+    auto d = patternBytes.data();
+
+    for (auto i = 0ul; i < sizeOfImage - s; ++i) {
+        bool found = true;
+        for (auto j = 0ul; j < s; ++j) {
+            if (scanBytes[i + j] != d[j] && d[j] != -1) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return (uintptr_t)&scanBytes[i];
+        }
+    }
+
+    debugLog += "[ERROR] Pattern not found: " + std::string(pattern) + "\n";
+    return 0;
+}
 
 bool LoadOffsets() {
     std::ifstream file("C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\Offsets.txt");
@@ -102,12 +152,14 @@ bool LoadOffsets() {
             else if (key == "m_iObserverMode") observerModeOffset = offset;
             else if (key == "m_hObserverTarget") observerTargetOffset = offset;
             else if (key == "m_pObserverServices") observerServicesOffset = offset;
+            else if (key == "createMove") {}
+            else if (key == "fovOffset") fovOffset = offset; // This should already exist based on your offsets.txt
         }
         catch (const std::exception& e) {
             debugLog += "[ERROR] Failed to parse offset for " + key + ": " + e.what() + "\n";
             std::cout << "[ERROR] Failed to parse offset for " << key << ": " << e.what() << std::endl;
         }
-        HMODULE sdlModule = GetModuleHandleA("sdl2.dll");
+        HMODULE sdlModule = GetModuleHandleA("SDL3.dll");
         if (sdlModule) {
             SDL_GetGrabbedWindow = (SDL_GetGrabbedWindowFn)GetProcAddress(sdlModule, "SDL_GetGrabbedWindow");
             SDL_GetWindowRelativeMouseMode = (SDL_GetWindowRelativeMouseModeFn)GetProcAddress(sdlModule, "SDL_GetWindowRelativeMouseMode");
@@ -130,10 +182,38 @@ bool LoadOffsets() {
             }
         }
         else {
-            debugLog += "[ERROR] sdl2.dll not found - cannot disable relative mouse mode\n";
+            debugLog += "[ERROR] SDL3.dll not found - cannot disable relative mouse mode\n";
         }
     }
     file.close();
+
+    std::ifstream file2("C:\\Users\\dionr\\Downloads\\cs2-full-main\\cs2-full-main\\Offsets.txt");
+    std::string createMovePattern;
+    while (std::getline(file2, line)) {
+        size_t pos = line.find("=");
+        if (pos == std::string::npos) continue;
+        std::string key = line.substr(0, pos);
+        std::string value = line.substr(pos + 1);
+        key.erase(std::remove_if(key.begin(), key.end(), isspace), key.end());
+
+        if (key == "createMove") {
+            createMovePattern = value;
+            break;
+        }
+    }
+    file2.close();
+
+    if (!createMovePattern.empty()) {
+        createMoveAddr = PatternScan("client.dll", createMovePattern.c_str());
+        if (createMoveAddr) {
+            debugLog += "[DEBUG] CreateMove pattern found at: 0x" + std::to_string(createMoveAddr) + "\n";
+            std::cout << "[DEBUG] CreateMove pattern found at: 0x" << std::hex << createMoveAddr << std::endl;
+        }
+        else {
+            debugLog += "[ERROR] Failed to find CreateMove pattern\n";
+            std::cout << "[ERROR] Failed to find CreateMove pattern" << std::endl;
+        }
+    }
 
     clientBase = (uintptr_t)GetModuleHandleA("client.dll");
     debugLog += "[DEBUG] Loaded offsets\n";

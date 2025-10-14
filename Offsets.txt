@@ -32,3 +32,6 @@ crosshairID = 0x3EDC
 m_iObserverMode = 0x40
 m_hObserverTarget = 0x44
 m_pObserverServices = 0x1420
+escapeMenu = 0x1E3DC30
+createMove = 48 8B C4 4C 89 40 18 48 89 48 08 55 53 41 54
+fovOffset = 0x288
