@@ -1,12 +1,264 @@
 #include "cheat.h"
+#include "fontawesome.h"
 
+OverrideViewFn oOverrideView = nullptr;
 ID3D11Device* g_pd3dDevice = nullptr;
+ID3D11DeviceContext* g_pd3dContext = nullptr;
 ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 PresentFn oPresent = nullptr;
 WndProcFn oWndProc = nullptr;
 CreateMoveFn oCreateMove = nullptr;
+// SDL function pointers - ADD THESE DEFINITIONS
+SDL_GetGrabbedWindowFn SDL_GetGrabbedWindow = nullptr;
+SDL_GetWindowRelativeMouseModeFn SDL_GetWindowRelativeMouseMode = nullptr;
+SDL_SetWindowRelativeMouseModeFn SDL_SetWindowRelativeMouseMode = nullptr;
+SDL_SetWindowGrabFn SDL_SetWindowGrab = nullptr;
+SDL_GetWindowGrabFn SDL_GetWindowGrab = nullptr;
+SDL_ShowCursorFn SDL_ShowCursor = nullptr;
+RenderParticleFn oRenderParticle = nullptr;
+LightSceneObjectFn oLightSceneObject = nullptr;
+GetInaccuracyFn oGetInaccuracy = nullptr;
+GetSpreadFn oGetSpread = nullptr;
+UpdateAccuracyPenaltyFn oUpdateAccuracyPenalty = nullptr;
+CreateSubtickMoveStepFn oCreateSubtickMoveStep = nullptr;
+RenderLegsFn oRenderLegs = nullptr;
+FrameStageNotifyFn oFrameStageNotify = nullptr;
+
+
+// For saving/restoring mouse mode
+SDL_bool savedRelativeMouseMode = SDL_FALSE;
+SDL_bool savedGrabMode = SDL_FALSE;
+
+
+
+bool SetupRenderLegsHook() {
+    if (!renderLegsAddr) {
+        debugLog += "[ERROR] RenderLegs address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)renderLegsAddr, &HK_RenderLegs, (LPVOID*)&oRenderLegs) != MH_OK) {
+        debugLog += "[ERROR] Failed to create RenderLegs hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)renderLegsAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable RenderLegs hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] RenderLegs hook set up successfully\n";
+    return true;
+}
+
+
+bool SetupFrameStageNotifyHook() {
+    // The signature you provided
+    const char* pattern = "48 89 5C 24 ? 57 48 81 EC ? ? ? ? 48 8B F9 8B DA";
+
+    uintptr_t address = PatternScan("client.dll", pattern);
+
+    if (address) {
+        if (MH_CreateHook((LPVOID)address, &HK_FrameStageNotify, (LPVOID*)&oFrameStageNotify) != MH_OK) {
+            debugLog += "[ERROR] Failed to create FSN hook\n";
+            return false;
+        }
+        if (MH_EnableHook((LPVOID)address) != MH_OK) {
+            debugLog += "[ERROR] Failed to enable FSN hook\n";
+            return false;
+        }
+        debugLog += "[DEBUG] FrameStageNotify hook active\n";
+        return true;
+    }
+    else {
+        debugLog += "[ERROR] FSN Pattern not found\n";
+        return false;
+    }
+}
+
+
+bool SetupNoSpreadHooks() {
+    if (!getInaccuracyAddr || !getSpreadAddr) {
+        debugLog += "[ERROR] NoSpread addresses not found\n";
+        return false;
+    }
+
+    // Hook GetInaccuracy
+    if (MH_CreateHook((LPVOID)getInaccuracyAddr, &HK_GetInaccuracy, (LPVOID*)&oGetInaccuracy) != MH_OK) {
+        debugLog += "[ERROR] Failed to create GetInaccuracy hook\n";
+        return false;
+    }
+    if (MH_EnableHook((LPVOID)getInaccuracyAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable GetInaccuracy hook\n";
+        return false;
+    }
+
+    // Hook GetSpread
+    if (MH_CreateHook((LPVOID)getSpreadAddr, &HK_GetSpread, (LPVOID*)&oGetSpread) != MH_OK) {
+        debugLog += "[ERROR] Failed to create GetSpread hook\n";
+        return false;
+    }
+    if (MH_EnableHook((LPVOID)getSpreadAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable GetSpread hook\n";
+        return false;
+    }
+    if (MH_CreateHook((LPVOID)updateAccuracyPenaltyAddr, &HK_UpdateAccuracyPenalty, (LPVOID*)&oUpdateAccuracyPenalty) != MH_OK) {
+        debugLog += "[ERROR] Failed to create UpdateAccuracyPenalty hook\n";
+        return false;
+    }
+    if (MH_EnableHook((LPVOID)updateAccuracyPenaltyAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable UpdateAccuracyPenalty hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] NoSpread hooks set up successfully\n";
+    return true;
+}
+
+bool SetupUpdateSkyboxHook() {
+    if (!updateSkyboxAddr) {
+        debugLog += "[ERROR] UpdateSkybox address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)updateSkyboxAddr, &HK_UpdateSkybox, (LPVOID*)&oUpdateSkybox) != MH_OK) {
+        debugLog += "[ERROR] Failed to create UpdateSkybox hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)updateSkyboxAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable UpdateSkybox hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] UpdateSkybox hook set up successfully\n";
+    return true;
+}
+
+bool SetupSubtickHook() {
+    if (!createSubtickMoveStepAddr) {
+        debugLog += "[ERROR] CreateSubtickMoveStep address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)createSubtickMoveStepAddr, &HK_CreateSubtickMoveStep, (LPVOID*)&oCreateSubtickMoveStep) != MH_OK) {
+        debugLog += "[ERROR] Failed to create CreateSubtickMoveStep hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)createSubtickMoveStepAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable CreateSubtickMoveStep hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] CreateSubtickMoveStep hook set up successfully\n";
+    return true;
+}
+
+
+bool SetupRenderParticleHook() {
+    if (!renderParticleAddr) {
+        debugLog += "[ERROR] RenderParticle address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)renderParticleAddr, &NewRenderParticle, (LPVOID*)&oRenderParticle) != MH_OK) {
+        debugLog += "[ERROR] Failed to create RenderParticle hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)renderParticleAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable RenderParticle hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] RenderParticle hook set up successfully\n";
+    return true;
+}
+
+
+bool SetupGetFOVHook() {
+    if (!getFOVAddr) {
+        debugLog += "[ERROR] GetFOV address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)getFOVAddr, &HK_GetFOV, (LPVOID*)&oGetFOV) != MH_OK) {
+        debugLog += "[ERROR] Failed to create GetFOV hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)getFOVAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable GetFOV hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] GetFOV hook set up successfully\n";
+    return true;
+}
+
+
+void* __fastcall HK_LightSceneObject(void* rcx, void* rdx, void* r8) {  // <- void* return!
+    static auto original = reinterpret_cast<LightSceneObjectFn>(oLightSceneObject);
+    auto result = original(rcx, rdx, r8);
+
+    if (lightModEnabled) {
+        auto object = reinterpret_cast<C_SceneLightObject*>(rdx);
+        if (IsValidPtr(object)) {
+            object->r = lightModColor.x;
+            object->g = lightModColor.y;
+            object->b = lightModColor.z;
+        }
+    }
+
+    return result;  // Now valid: returns void*
+}
+
+bool SetupLightSceneHook() {
+    if (!lightSceneObjectAddr) {
+        debugLog += "[ERROR] LightSceneObject address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)lightSceneObjectAddr, &HK_LightSceneObject, (LPVOID*)&oLightSceneObject) != MH_OK) {
+        debugLog += "[ERROR] Failed to create LightSceneObject hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)lightSceneObjectAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable LightSceneObject hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] LightSceneObject hook set up successfully\n";
+    std::cout << "[DEBUG] LightSceneObject hook set up successfully" << std::endl;
+    return true;
+}
+
+
+
+bool SetupOverrideViewHook() {
+    if (!overrideViewAddr) {
+        debugLog += "[ERROR] OverrideView address not found\n";
+        return false;
+    }
+
+    if (MH_CreateHook((LPVOID)overrideViewAddr, &HK_OverrideView, (LPVOID*)&oOverrideView) != MH_OK) {
+        debugLog += "[ERROR] Failed to create OverrideView hook\n";
+        return false;
+    }
+
+    if (MH_EnableHook((LPVOID)overrideViewAddr) != MH_OK) {
+        debugLog += "[ERROR] Failed to enable OverrideView hook\n";
+        return false;
+    }
+
+    debugLog += "[DEBUG] OverrideView hook set up successfully\n";
+    return true;
+}
+
 
 // Add CreateMove hook setup
 bool SetupCreateMoveHook() {
@@ -58,7 +310,10 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
         pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
         g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
         pBackBuffer->Release();
-
+        if (!g_pd3dDevice) {
+            pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&g_pd3dDevice);
+            g_pd3dDevice->GetImmediateContext(&g_pd3dContext);
+        }
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
 
@@ -77,7 +332,24 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
             debugLog += "[DEBUG] Default font loaded successfully.\n";
         }
 
-        // Load navigation font (for sidebar only)
+        static const ImWchar icons_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+        ImFontConfig icons_config;
+        icons_config.MergeMode = true;           // <--- This merges icons into the previous font (Arial)
+        icons_config.PixelSnapH = true;
+        icons_config.FontDataOwnedByAtlas = false; // <--- Essential for header-based fonts so ImGui doesn't try to free const memory
+
+        // 3. LOAD FONT AWESOME FROM MEMORY
+        // Ensure 'fontAwesome' is the name of the byte array in your header
+        iconFont = io.Fonts->AddFontFromMemoryTTF((void*)fontAwesome, sizeof(fontAwesome), 16.0f, &icons_config, icons_ranges);
+
+        if (iconFont == nullptr) {
+            std::cout << "[ERROR] Failed to load FontAwesome from memory!" << std::endl;
+        }
+        else {
+            std::cout << "[DEBUG] FontAwesome loaded successfully." << std::endl;
+        }
+
+        // Load navigation font (for sidebar only) don't need it though
         navFont = io.Fonts->AddFontFromFileTTF("C:\\Users\\dionr\\Downloads\\race-sport\\Race Sport.ttf", 18.0f);  // Example: Consolas at 14px
         if (navFont == nullptr) {
             std::cout << "[ERROR] Failed to load navigation font! Using default font." << std::endl;
@@ -91,9 +363,9 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 
         // Load icon font (e.g., FontAwesome for icons)
         ImFontConfig iconConfig;
-        iconConfig.MergeMode = true; // Merge with previous font
-        static const ImWchar iconRanges[] = { 0xf000, 0xf3ff, 0 }; // FontAwesome range
-        iconFont = io.Fonts->AddFontFromFileTTF("C:\\Users\\dionr\\Downloads\\Font-Awesome-7.x\\Font-Awesome-7.x\\otfs\\Font Awesome 7 Free-Solid-900.otf", 16.0f, &iconConfig, iconRanges); // Assume FontAwesome TTF path
+        iconConfig.MergeMode = true; // Merge with previous font 
+        static const ImWchar iconRanges[] = { 0x0000, 0xffff, 0 }; // FontAwesome range
+        iconFont = io.Fonts->AddFontFromFileTTF("C:\\Users\\dionr\\Downloads\\fontawesome-free-7.1.0-desktop\\fontawesome-free-7.1.0-desktop\\otfs\\Font Awesome 7 Free-Solid-900.otf", 16.0f, &iconConfig, iconRanges);
         if (iconFont == nullptr) {
             std::cout << "[ERROR] Failed to load icon font! Icons may not display." << std::endl;
             debugLog += "[ERROR] Failed to load icon font! Icons may not display.\n";
@@ -119,7 +391,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     if (menuOpen) {
         ImGuiIO& io = ImGui::GetIO();
         io.WantCaptureMouse = true;
-        io.WantCaptureKeyboard = true;
         io.MouseDrawCursor = true;  // Draw ImGui's cursor when menu is open
     }
     else {
@@ -209,6 +480,8 @@ DWORD WINAPI KeyThread(LPVOID param) {
         if (GetAsyncKeyState(VK_INSERT) & 1) {
             menuOpen = !menuOpen;
             debugLog += "[INFO] Menu toggled: " + std::string(menuOpen ? "Open" : "Closed") + "\n";
+            
+
 
             if (SDL_SetWindowRelativeMouseMode && SDL_GetWindowRelativeMouseMode && SDL_GetGrabbedWindow &&
                 SDL_SetWindowGrab && SDL_GetWindowGrab && SDL_ShowCursor) {
@@ -226,13 +499,12 @@ DWORD WINAPI KeyThread(LPVOID param) {
                         SDL_SetWindowGrab(window, savedGrabMode);  // Restore grab
                         SDL_ShowCursor(SDL_DISABLE);  // Hide cursor
                     }
-                    debugLog += "[DEBUG] SDL mouse mode (relative/grab/cursor) set to " + std::string(menuOpen ? "menu-only" : "restored") + "\n";
                 }
                 else {
                     debugLog += "[ERROR] Failed to get SDL grabbed window\n";
                 }
             }
-            else if (mouseDisableInputOffset) {
+            if (mouseDisableInputOffset) {
                 // Fallback ConVar (unchanged)
                 bool disable = menuOpen ? true : false;
                 WriteMemory<bool>(clientBase + mouseDisableInputOffset, disable);
@@ -266,7 +538,43 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             if (!SetupCreateMoveHook()) {
                 std::cout << "[WARNING] CreateMove hook failed, FOV changer will not work" << std::endl;
             }
+            if (!SetupOverrideViewHook()) {
+                std::cout << "[WARNING] OverrideView hook failed, third-person won't work" << std::endl;
+            }
+            if (!SetupGetFOVHook()) {
+                std::cout << "[WARNING] GetFOV hook failed, FOV Changer V2 will not work" << std::endl;
+            }
+            if (!SetupRenderParticleHook()) {
+                std::cout << "[WARNING] RenderParticle hook failed, particle modulation will not work" << std::endl;
+            }
+            if (!SetupLightSceneHook()) {
+                std::cout << "[WARNING] LightSceneObject hook failed, light modulation will not work" << std::endl;
+            }
+            if (!SetupNoSpreadHooks()) {
+                std::cout << "[WARNING] NoSpread hooks failed, feature will not work" << std::endl;
+            }
+            if (!SetupUpdateSkyboxHook()) {
+                std::cout << "[WARNING] UpdateSkybox hook failed, sky modulation will not work" << std::endl;
+            }
+            if (!SetupRenderLegsHook()) {
+                std::cout << "[WARNING] RenderLegs hook failed, no legs feature will not work" << std::endl;
+            }
+            if (!SetupSubtickHook()) {
+                std::cout << "[WARNING] CreateSubtickMoveStep hook failed, de-subtick will not work" << std::endl;
+            }
+            if (!SetupPopupAcceptMatchHook()) {
+                std::cout << "[WARNING] PopupAcceptMatchFound hook failed, auto accept will not work" << std::endl;
+            }
+
             CreateThread(NULL, 0, KeyThread, NULL, 0, NULL);
+            HANDLE bhopThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)RunBhopThread, NULL, 0, NULL);
+            if (bhopThread) {
+                SetThreadPriority(bhopThread, THREAD_PRIORITY_HIGHEST);
+                bhopThreadRunning = true;
+            }
+            else {
+                debugLog += "[ERROR] Failed to create bhop thread\n";
+            }
         }
         catch (const std::exception& e) {
             std::cout << "[ERROR] Exception in DllMain: " << e.what() << std::endl;
