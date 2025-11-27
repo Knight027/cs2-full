@@ -4,75 +4,6 @@
 #include <array>
 #include "menu.h"
 
-const char* GetWeaponName(int defIndex) {
-    // Comprehensive weapon list
-    switch (defIndex) {
-        // Pistols
-    case 1: return "Desert Eagle";
-    case 2: return "Dual Berettas";
-    case 3: return "Five-SeveN";
-    case 4: return "Glock-18";
-    case 32: return "P2000";
-    case 36: return "P250";
-    case 61: return "USP-S";
-    case 63: return "CZ75-Auto";
-    case 64: return "R8 Revolver";
-
-        // SMGs
-    case 17: return "MAC-10";
-    case 19: return "P90";
-    case 23: return "MP5-SD";
-    case 24: return "UMP-45";
-    case 26: return "PP-Bizon";
-    case 33: return "MP7";
-    case 34: return "MP9";
-
-        // Rifles
-    case 7: return "AK-47";
-    case 8: return "AUG";
-    case 9: return "AWP";
-    case 10: return "FAMAS";
-    case 11: return "G3SG1";
-    case 13: return "Galil AR";
-    case 14: return "M249";
-    case 16: return "M4A4";
-    case 28: return "Negev";
-    case 35: return "Nova";
-    case 38: return "SCAR-20";
-    case 39: return "SG 553";
-    case 40: return "SSG 08";
-    case 60: return "M4A1-S";
-
-        // Shotguns
-    case 25: return "XM1014";
-    case 27: return "MAG-7";
-    case 29: return "Sawed-Off";
-
-        // Equipment
-    case 31: return "Zeus x27";
-    case 42: return "Knife";
-    case 43: return "Flashbang";
-    case 44: return "HE Grenade";
-    case 45: return "Smoke";
-    case 46: return "Molotov";
-    case 47: return "Decoy";
-    case 48: return "Incendiary";
-    case 49: return "C4";
-    case 59: return "Knife";
-    case 72: return "Tablet";
-
-        // Default case - log unknown weapons
-    default:
-        // Don't log common invalid values to avoid spam
-        if (defIndex > 0 && defIndex < 1000) {
-            debugLog += "[WEAPON] Unknown weapon defIndex: " + std::to_string(defIndex) + "\n";
-        }
-        static char unknown[32];
-        sprintf_s(unknown, "Weapon %d", defIndex);
-        return unknown;
-    }
-}
-
 void PlayMP3(const std::string& filePath) {
     static int soundCounter = 0;
     std::string alias = "mp3sound" + std::to_string(soundCounter++);
@@ -253,7 +184,7 @@ uintptr_t GetPawnFromHandle(uint32_t handle) {
     if (!listEntry) return 0;
 
     // Now we get the actual entity pointer
-    return ReadMemory<uintptr_t>(listEntry + 120 * (handle & 0x1FF));
+    return ReadMemory<uintptr_t>(listEntry + 0x70 * (handle & 0x1FF));
 }
 
 uintptr_t GetObserverTarget(uintptr_t pawn) {
@@ -437,8 +368,6 @@ LocalPlayer GetLocalPlayer() {
     lp.team = ReadMemory<int>(lp.pawn + teamOffset);
     lp.health = ReadMemory<int>(lp.pawn + healthOffset);
     lp.shotsFired = ReadMemory<int>(lp.pawn + shotsFiredOffset);
-    lp.activeWeapon = ReadMemory<uintptr_t>(lp.pawn + activeWeaponOffset);
-    lp.ammo = lp.activeWeapon ? ReadMemory<int>(lp.activeWeapon + ammoOffset) : 0;
     lp.viewAngles = ReadMemory<Vector3>(lp.pawn + viewAnglesOffset);  // Eye angles
 
     uintptr_t localController = ReadMemory<uintptr_t>(clientBase + localPlayerControllerOffset);
@@ -512,43 +441,7 @@ std::vector<Entity> GetEntities() {
             strcpy_s(e.name, "Unknown");
         }
 
-        // FIXED: Proper weapon reading for enemies
-        uintptr_t weaponServices = ReadMemory<uintptr_t>(entity + m_pWeaponServices); // m_pWeaponServices
-        if (weaponServices) {
-            uintptr_t activeWeapon = ReadMemory<uintptr_t>(weaponServices + activeWeaponOffset); // m_hActiveWeapon
-            if (activeWeapon) {
-                // Convert handle to entity pointer
-                uint32_t weaponHandle = ReadMemory<uint32_t>(activeWeapon);
-                if (weaponHandle && weaponHandle != 0xFFFFFFFF) {
-                    uintptr_t weaponIndex = weaponHandle & 0x7FFF;
-                    uintptr_t weaponListEntry = ReadMemory<uintptr_t>(entityList + 0x8 * ((weaponIndex & 0x7FFF) >> 9) + 0x10);
-                    if (weaponListEntry) {
-                        uintptr_t weaponEntity = ReadMemory<uintptr_t>(weaponListEntry + 0x70 * (weaponIndex & 0x1FF));
-                        if (weaponEntity) {
-                            e.weaponDefIndex = ReadMemory<int>(weaponEntity + itemDefIndexOffset);
-                            e.ammo = ReadMemory<int>(weaponEntity + ammoOffset);
-
-                            // DEBUG: Log weapon reading
-                            debugLog += "[WEAPON] Enemy " + std::string(e.name) + " weapon defIndex: " +
-                                std::to_string(e.weaponDefIndex) + "\n";
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fallback if weapon services method fails
-        if (e.weaponDefIndex == 0) {
-            uintptr_t activeWeapon = ReadMemory<uintptr_t>(entity + activeWeaponOffset);
-            if (activeWeapon) {
-                e.weaponDefIndex = ReadMemory<int>(activeWeapon + itemDefIndexOffset);
-                e.ammo = ReadMemory<int>(activeWeapon + ammoOffset);
-
-                // DEBUG: Log alternative method
-                debugLog += "[WEAPON-ALT] Enemy " + std::string(e.name) + " weapon defIndex: " +
-                    std::to_string(e.weaponDefIndex) + " (using alt method)\n";
-            }
-        }
+        
 
         e.armor = ReadMemory<int>(entity + armorOffset);
         e.hasDefuser = ReadMemory<bool>(entity + hasDefuserOffset);
@@ -574,51 +467,50 @@ std::vector<Entity> GetEntities() {
         e.pawn = entity;
         e.lastHitGroup = ReadMemory<int>(entity + lastHitGroupOffset);
 
+        // [Added] Weapon Reading Logic
+        e.weaponName[0] = '\0';
+
+        // 1. Fallback Offsets (Use these if your offsets.txt is wrong/empty)
+        // Adjust these if you have a dumper, but these are common for current CS2
+        uintptr_t currentWeaponServicesOffset = m_pWeaponServices ? m_pWeaponServices : 0x13F0;
+        uintptr_t currentItemDefOffset = itemDefIndexOffset ? itemDefIndexOffset : 0x30;
+
+        if (currentWeaponServicesOffset) {
+            uintptr_t weaponServices = ReadMemory<uintptr_t>(entity + currentWeaponServicesOffset);
+
+            if (weaponServices) {
+                // Read Active Weapon Handle (0x58 is standard)
+                uint32_t activeWeaponHandle = ReadMemory<uint32_t>(weaponServices + 0x58);
+
+                if (activeWeaponHandle != 0xFFFFFFFF && activeWeaponHandle > 0) {
+                    uintptr_t weaponEntity = GetPawnFromHandle(activeWeaponHandle);
+
+                    if (weaponEntity) {
+                        // Read the ID
+                        short weaponIndex = ReadMemory<short>(weaponEntity + currentItemDefOffset);
+
+                        // DEBUG PRINT (Check your console!)
+                        // If this prints "ID: 0", your itemDefIndexOffset is wrong.
+                        // If this prints "ID: 500+", it's a knife.
+                        // std::cout << "[WeaponESP] Handle: " << std::hex << activeWeaponHandle 
+                        //           << " | Ent: " << weaponEntity 
+                        //           << " | ID: " << std::dec << weaponIndex << std::endl;
+
+                        const char* wName = GetWeaponNameById(weaponIndex);
+                        if (wName) {
+                            strcpy_s(e.weaponName, wName);
+                        }
+                    }
+                }
+            }
+        }
+
         entities.push_back(e);
+
     }
     return entities;
 }
 
-std::vector<WeaponEntity> GetDroppedWeapons() {
-    std::vector<WeaponEntity> weapons;
-
-    if (!clientBase) return weapons;
-
-    uintptr_t entityList = ReadMemory<uintptr_t>(clientBase + entityListOffset);
-    if (!entityList) return weapons;
-
-    for (int i = 64; i < 1024; i++) {
-        uintptr_t list_entry = ReadMemory<uintptr_t>(entityList + 0x8 * ((i & 0x7FFF) >> 9) + 0x10);
-        if (!list_entry) continue;
-
-        uintptr_t entity = ReadMemory<uintptr_t>(list_entry + 0x70 * (i & 0x1FF));
-        if (!entity) continue;
-
-        // Check if it's a weapon entity by checking if it has weapon properties
-        int defIndex = ReadMemory<int>(entity + itemDefIndexOffset);
-        if (defIndex <= 0) continue;
-
-        // Check if it's a dropped weapon (no owner or world entity)
-        uint32_t ownerHandle = ReadMemory<uint32_t>(entity + ownerEntityOffset);
-        if (ownerHandle != 0xFFFFFFFF) continue; // Skip if owned by player
-
-        // Get the position through scene node
-        uintptr_t sceneNode = ReadMemory<uintptr_t>(entity + sceneNodeOffset);
-        if (!sceneNode) continue;
-
-        Vector3 origin = ReadMemory<Vector3>(sceneNode + originOffset);
-
-        // Validate position (not zero)
-        if (origin.x == 0 && origin.y == 0 && origin.z == 0) continue;
-
-        WeaponEntity w;
-        w.origin = origin;
-        w.defIndex = defIndex;
-        weapons.push_back(w);
-    }
-
-    return weapons;
-}
 
 bool IsGameInFocus() {
     HWND foregroundWindow = GetForegroundWindow();

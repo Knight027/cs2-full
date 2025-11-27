@@ -40,7 +40,6 @@ bool customCrosshairEnabled = false;
 bool showFPS = false;
 bool showPosition = false;
 bool showVelocity = false;
-bool showWeaponInfo = false;
 bool showSpectators = false;
 bool showGameTime = false;
 bool showKeysPressed = false;
@@ -92,12 +91,10 @@ bool fovChangerEnabled = false;
 bool glowThroughWalls = false;
 bool wireframeBoneESPEnabled = false;
 bool nameESPEnabled = false;
-bool weaponTextESPEnabled = false;
 bool box2DEnabled = false;
 bool skeletonEnabled = false;
 bool armorBarEnabled = false;
 bool distanceTextEnabled = false;
-bool weaponESPEnabled = false;
 bool soundESPEnabled = false;
 bool backtrackESPEnabled = false;
 bool velocityESPEnabled = false;
@@ -179,14 +176,12 @@ ImVec4 headCircleColor = ImVec4(1.0f, 0.0f, 1.0f, 1.0f);
 ImVec4 glowColor = ImVec4(0.5f, 0.0f, 0.5f, 0.5f);
 ImVec4 fovCircleColor = ImVec4(1.0f, 1.0f, 1.0f, 0.4f);
 ImVec4 crosshairColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-ImVec4 weaponColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
 ImVec4 wireframeVisibleColor = ImVec4(0.0f, 1.0f, 0.0f, 0.6f);  // Green for visible
 ImVec4 wireframeInvisibleColor = ImVec4(1.0f, 0.0f, 0.0f, 0.6f);  // Red for invisible
 ImVec4 backtrackESPColor = ImVec4(1.0f, 0.65f, 0.0f, 1.0f);
 ImVec4 soundESPColor = ImVec4(1.0f, 0.65f, 0.0f, 1.0f);
 ImVec4 espTextColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
 ImVec4 espIconColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-ImVec4 espWeaponColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
 ImVec4 espDistanceColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
 ImVec4 skeletonStartColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
 ImVec4 skeletonEndColor = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
@@ -207,7 +202,6 @@ GlowSettings teammateGlowSettings;
 
 
 
-float weaponMaxDistance = 2000.0f;
 
 float soundMaxTime = 5.0f;
 std::map<Vector3, float> soundLocations;
@@ -354,6 +348,69 @@ float bulletTracerThickness = 1.5f; // Default thickness
 
 
 
+bool weaponESPEnabled = false;
+
+
+
+const char* GetWeaponNameById(int id) {
+    switch (id) {
+    case 1: return "Deagle";
+    case 2: return "Dualies";
+    case 3: return "Five-Seven";
+    case 4: return "Glock";
+    case 7: return "AK-47";
+    case 8: return "AUG";
+    case 9: return "AWP";
+    case 10: return "FAMAS";
+    case 11: return "G3SG1";
+    case 13: return "Galil";
+    case 14: return "M249";
+    case 16: return "M4A4";
+    case 17: return "Mac-10";
+    case 19: return "P90";
+    case 23: return "MP5-SD";
+    case 24: return "UMP-45";
+    case 25: return "XM1014";
+    case 26: return "Bizon";
+    case 27: return "MAG-7";
+    case 28: return "Negev";
+    case 29: return "Sawed-Off";
+    case 30: return "Tec-9";
+    case 31: return "Zeus";
+    case 32: return "P2000";
+    case 33: return "MP7";
+    case 34: return "MP9";
+    case 35: return "Nova";
+    case 38: return "SCAR-20";
+    case 39: return "SG-553";
+    case 40: return "SSG-08";
+    case 42: return "Knife"; // CT Knife
+    case 43: return "Flashbang";
+    case 44: return "HE Grenade";
+    case 45: return "Smoke";
+    case 46: return "Molotov";
+    case 47: return "Decoy";
+    case 48: return "Incendiary";
+    case 49: return "C4";
+    case 59: return "Knife"; // T Knife
+    case 60: return "M4A1-S";
+    case 61: return "USP-S";
+    case 63: return "CZ75";
+    case 64: return "R8";
+        // Add logic for Knife Skins (Ids usually 500+)
+    default:
+        // If ID is 0, we failed to read. Return nullptr to hide text.
+        if (id == 0) return nullptr;
+        // If ID is large (skins), it's likely a knife
+        if (id > 100) return "Knife";
+        return nullptr;
+    }
+}
+
+
+
+bool pSilentEnabled = false;
+float pSilentFOV = 2.0f;
 
 
 
@@ -448,6 +505,18 @@ int lastShotTarget = -1;
 
 
 
+
+
+bool chamsEnabled = false;
+bool chamsIgnoreZ = false;
+bool chamsWireframe = false;
+ImVec4 chamsColor = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+ImVec4 chamsInvisibleColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+
+
+void* customMaterial = nullptr;
+void* customMaterialInvisible = nullptr;
+void* g_pMaterialSystem = nullptr;
 
 
 

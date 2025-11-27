@@ -192,6 +192,115 @@ void RenderBulletTracers(Matrix4x4 viewMatrix, float screenWidth, float screenHe
 
 
 
+
+
+void* CreateMaterialFromVMAT(const char* name, const std::string& vmat) {
+    if (!oLoadKeyValues || !oCreateMaterial) return nullptr;
+
+    // 1. Create KV3 object from string
+    void* keyValues = oLoadKeyValues(vmat.c_str());
+    if (!keyValues) return nullptr;
+
+    // 2. Create Material using the KeyValues
+    // This pointer calculation (clientBase + 0x...) depends on where specific MaterialSystem globals are.
+    // However, usually passing nullptr as 'thisptr' for oCreateMaterial might crash if it calls a member.
+    // Assuming oCreateMaterial is the exported C function or we have the interface pointer.
+    // For this snippet, we assume oCreateMaterial handles the resource pointer internally or we pass nullptr if it's static.
+
+    // NOTE: In many CS2 internals, you need the CResourceSystem pointer. 
+    // If oCreateMaterial requires a 'this' pointer, you must find the MaterialSystem2 instance.
+    // If using the patterns provided, assuming standard usage:
+    return oCreateMaterial(nullptr, name, keyValues, nullptr, false);
+}
+
+void InitializeChamsMaterials() {
+    // CRITICAL SAFETY CHECK: Do not run if we don't have the interface or function
+    if (customMaterial || !g_pMaterialSystem || !oLoadKeyValues || !oCreateMaterial) return;
+
+    std::string flatVmat = R"(
+        {
+            shader = "csgo_unlitgeneric.vfx"
+            F_DISABLE_Z_BUFFERING = 0
+            F_BLEND_MODE = 1
+            g_vColorTint = [1.0, 1.0, 1.0, 1.0]
+        }
+    )";
+
+    std::string ignoreZVmat = R"(
+        {
+            shader = "csgo_unlitgeneric.vfx"
+            F_DISABLE_Z_BUFFERING = 1
+            F_BLEND_MODE = 1
+            g_vColorTint = [1.0, 1.0, 1.0, 1.0]
+        }
+    )";
+
+    // Parse KeyValues
+    void* kvVisible = oLoadKeyValues(flatVmat.c_str());
+    void* kvInvisible = oLoadKeyValues(ignoreZVmat.c_str());
+
+    if (kvVisible) {
+        // Pass the valid g_pMaterialSystem interface here!
+        customMaterial = oCreateMaterial(g_pMaterialSystem, "custom_flat_visible", kvVisible, nullptr, false);
+    }
+
+    if (kvInvisible) {
+        customMaterialInvisible = oCreateMaterial(g_pMaterialSystem, "custom_flat_invisible", kvInvisible, nullptr, false);
+    }
+}
+
+// THE HOOK
+void __fastcall HK_DrawObject(void* thisptr, void* sceneObject, void* material, void* renderContext, void* unk, void* unk2) {
+    // 1. Safety Checks (Prevent crash if pointers are bad)
+    if (!thisptr || !sceneObject || !material || !chamsEnabled) {
+        return oDrawObject(thisptr, sceneObject, material, renderContext, unk, unk2);
+    }
+
+    // 2. Identify Player Logic (Safe Version)
+    // Accessing material name is unsafe. Instead, we use a heuristic or just verify initialization.
+    // For a stable cheat, we usually check if the entity associated with the scene object is a player.
+    // However, without perfect struct definitions, we will rely on checking if the material is valid.
+
+    // Only attempt to initialize if we haven't yet, and we are in a safe state
+    if (!customMaterial && g_pMaterialSystem) {
+        InitializeChamsMaterials();
+    }
+
+    // 3. Simple material name check (SAFELY)
+    // In CS2, the material pointer + 0 is NOT the name. 
+    // We will skip the name check for now and rely on visual filtering (or just applying to everything to test stability).
+    // If you apply to everything, the whole world will turn flat.
+    // To filter for players without offsets:
+    // This is a "Blind" apply. Use standard ESP to confirm players are rendering.
+
+    bool shouldCham = false;
+
+    // HACK: To verify stability, we only cham if the material pointer matches a "known" range or heuristic
+    // or simply if we have a valid custom material.
+    // Real implementation requires: CSceneAnimatableObject->m_hOwnerEntity
+
+    // SAFE IMPLEMENTATION:
+    // Just run original for now until you confirm the crash is gone.
+    // Uncomment the lines below to enable chams on EVERYTHING (to test material creation).
+
+    /* if (customMaterial) {
+        if (chamsIgnoreZ && customMaterialInvisible) {
+             oDrawObject(thisptr, sceneObject, customMaterialInvisible, renderContext, unk, unk2);
+        }
+        oDrawObject(thisptr, sceneObject, customMaterial, renderContext, unk, unk2);
+        return;
+    }
+    */
+
+    return oDrawObject(thisptr, sceneObject, material, renderContext, unk, unk2);
+}
+
+
+
+
+
+
+
 void RunAutoStrafe(const LocalPlayer& lp) {
     if (!autoStrafeEnabled || !bunnyhopEnabled || lp.health <= 0 || !lp.pawn) return;
     int flags = ReadMemory<int>(lp.pawn + m_fFlagsOffset);
@@ -745,6 +854,44 @@ void RunAimbot() {
     }
 }
 
+
+Entity* GetBestTargetForSilent(const LocalPlayer& lp, const std::vector<Entity>& entities) {
+    if (entities.empty()) return nullptr;
+
+    Entity* bestTarget = nullptr;
+    float bestFov = pSilentFOV; // Use pSilent FOV
+
+    for (const auto& entity : entities) {
+        if (entity.health <= 0 || entity.health > 100) continue;
+        if (entity.team == lp.team) continue; // No teammates
+        // if (aimOnVisibleOnly && !entity.visible) continue; // Optional visibility check
+
+        Vector3 headPos = GetBonePosition(entity.boneMatrix, bone_head);
+        if (headPos.x == 0 && headPos.y == 0) continue;
+
+        Vector3 angleTo = CalculateAngle(lp.origin, headPos);
+        Vector3 currentAngles = lp.viewAngles;
+
+        // Clamp and Normalize
+        angleTo = ClampAngle(angleTo);
+
+        float deltaX = angleTo.x - currentAngles.x;
+        float deltaY = angleTo.y - currentAngles.y;
+        while (deltaY > 180.0f) deltaY -= 360.0f;
+        while (deltaY < -180.0f) deltaY += 360.0f;
+
+        float fov = sqrtf(deltaX * deltaX + deltaY * deltaY);
+
+        if (fov < bestFov) {
+            bestFov = fov;
+            bestTarget = const_cast<Entity*>(&entity);
+        }
+    }
+    return bestTarget;
+}
+
+
+
 Entity* GetBestExternalAimbotTarget(const std::vector<Entity>& entities, const LocalPlayer& lp,
     Matrix4x4 viewMatrix, float screenWidth, float screenHeight) {
     Entity* bestTarget = nullptr;
@@ -1245,13 +1392,6 @@ void ApplyFeatures(const LocalPlayer& lp, const std::vector<Entity>& entities) {
         RunTriggerbot(lp, entities);
     }
 
-    if (noSpreadEnabled && lp.activeWeapon) {
-        uintptr_t weapon = lp.activeWeapon;
-        // Recent offsets (Jul 2025): m_iShotsFired=0x23FC (player-side?), but weapon-side too
-        WriteMemory<float>(weapon + 0x1A00, 0.0f);  // m_flSpreadCone (common, verify dump)
-        WriteMemory<float>(weapon + 0x19F8, 0.0f);  // m_fAccuracyPenalty (approx)
-        WriteMemory<int>(lp.pawn + shotsFiredOffset, 0);      // m_iShotsFired (resets pattern)
-    }
 
     if (skyModEnabled) {
         static std::unordered_set<uintptr_t> skyEntitiesPatched;  // Patch once per entity
@@ -1447,6 +1587,37 @@ void __fastcall HK_FrameStageNotify(void* thisptr, int stage) {
 
 __int64 __fastcall HK_CreateMove(void* thisptr, int a2, int a3, float a4, bool a5) {
     __int64 result = oCreateMove(thisptr, a2, a3, a4, a5);
+
+
+    if (pSilentEnabled && dwCSGOInputOffset) {
+        // Read the pointer to the Input System
+        CCSGOInput* input = ReadMemory<CCSGOInput*>(clientBase + dwCSGOInputOffset);
+
+        if (input) {
+            int sequence_number = ReadMemory<int>((uintptr_t)input + 0x5C30);
+
+            uintptr_t userCmdPtr = (uintptr_t)input + 0x258 + (sizeof(CUserCmd) * (sequence_number % 150));
+
+            uintptr_t cmdBasePtr = ReadMemory<uintptr_t>(userCmdPtr + 0x20);
+
+            if (cmdBasePtr) {
+                LocalPlayer lp = GetLocalPlayer();
+                if (lp.pawn && lp.health > 0) {
+                    std::vector<Entity> entities = GetEntities();
+                    Entity* target = GetBestTargetForSilent(lp, entities);
+
+                    if (target) {
+                        Vector3 headPos = GetBonePosition(target->boneMatrix, bone_head);
+                        Vector3 angleTo = CalculateAngle(lp.origin, headPos);
+                        angleTo = ClampAngle(angleTo);
+
+                        WriteMemory<Vector3>(cmdBasePtr + 0x40, angleTo);
+
+                    }
+                }
+            }
+        }
+    }
 
     return result;
 }

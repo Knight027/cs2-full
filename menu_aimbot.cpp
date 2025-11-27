@@ -59,6 +59,18 @@ void RenderAimbotTab() {
 
     // --- LEFT COLUMN: Main Settings ---
     if (ImGui::BeginChild("MainAimbot", ImVec2(0, 0), true, ImGuiWindowFlags_AlwaysUseWindowPadding)) {
+        
+        ImGui::TextColored(themeAccent, ICON_FA_MAGIC "  Silent Aim");
+        ImGui::Separator();
+        CustomCheckbox("Enable pSilent", &pSilentEnabled);
+        if (pSilentEnabled) {
+            ImGui::Indent();
+            CustomSliderFloat("Silent FOV", &pSilentFOV, 0.1f, 10.0f, "%.1f°");
+            ImGui::TextDisabled("Note: Hides aim from screen.");
+            ImGui::Unindent();
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
 
         ImGui::TextColored(themeAccent, ICON_FA_CROSSHAIRS "  Aimbot Configuration");
         ImGui::Separator();

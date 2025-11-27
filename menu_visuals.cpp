@@ -38,8 +38,8 @@ void RenderVisualsTab() {
         CustomCheckbox("Name", &nameESPEnabled);
         CustomCheckbox("Health Bar", &healthBarEnabled);
         CustomCheckbox("Armor Bar", &armorEnabled);
-        CustomCheckbox("Weapon", &weaponESPEnabled);
         CustomCheckbox("Flags", &flagsEnabled);
+        CustomCheckbox("Weapon Text", &weaponESPEnabled);
         ImGui::Unindent();
 
         ImGui::Spacing();
@@ -87,6 +87,24 @@ void RenderVisualsTab() {
             ImGui::Unindent();
         }
 
+        ImGui::Separator();
+        ImGui::TextColored(themeAccent, ICON_FA_USER "  Chams");
+
+        CustomCheckbox("Enable Chams", &chamsEnabled);
+        if (chamsEnabled) {
+            ImGui::Indent();
+            CustomCheckbox("Through Walls (XQZ)", &chamsIgnoreZ);
+            // CustomCheckbox("Wireframe", &chamsWireframe); // If you implement wireframe material
+
+            ImGui::Text("Visible Color");
+            ColorPicker("##ChamsVis", chamsColor);
+
+            if (chamsIgnoreZ) {
+                ImGui::Text("Hidden Color");
+                ColorPicker("##ChamsInvis", chamsInvisibleColor);
+            }
+            ImGui::Unindent();
+        }
 
     } ImGui::EndChild();
     ImGui::PopStyleColor();

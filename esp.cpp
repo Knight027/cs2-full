@@ -205,17 +205,6 @@ void RenderEnhancedInfo(Entity& e, ImVec2 boxMin, ImVec2 boxMax, ImDrawList* dra
         infoLines.push_back(e.name);
     }
 
-    // Weapon
-    if (weaponTextESPEnabled) {
-        char weaponText[64];
-        if (ammoEnabled && e.ammo > 0) {
-            sprintf_s(weaponText, "%s [%d]", GetWeaponName(e.weaponDefIndex), e.ammo);
-        }
-        else {
-            sprintf_s(weaponText, "%s", GetWeaponName(e.weaponDefIndex));
-        }
-        infoLines.push_back(weaponText);
-    }
 
     // Distance
     if (distanceTextEnabled) {
@@ -558,143 +547,7 @@ void RenderRadar(const LocalPlayer& lp, const std::vector<Entity>& entities, ImD
     );
 }
 
-void RenderWeaponESP(const std::vector<WeaponEntity>& weapons, Matrix4x4 viewMatrix,
-    float screenWidth, float screenHeight, ImDrawList* drawList) {
-    if (!weaponESPEnabled) return;
 
-    LocalPlayer lp = GetLocalPlayer();
-    if (!lp.pawn) return;
-
-    for (const auto& weapon : weapons) {
-        // Calculate distance in meters
-        float distance = sqrtf(
-            powf(lp.origin.x - weapon.origin.x, 2) +
-            powf(lp.origin.y - weapon.origin.y, 2) +
-            powf(lp.origin.z - weapon.origin.z, 2)
-        ) / 100.0f;
-
-        if (distance > weaponMaxDistance) continue;
-
-        Vector3 screenPos;
-        if (WorldToScreen(weapon.origin, screenPos, viewMatrix, screenWidth, screenHeight)) {
-            const char* weaponName = GetWeaponName(weapon.defIndex);
-
-            // Create weapon text with distance
-            char weaponText[64];
-            sprintf_s(weaponText, "%s (%.0fm)", weaponName, distance);
-
-            // Calculate text size for proper positioning
-            ImVec2 textSize = ImGui::CalcTextSize(weaponText);
-
-            // Draw a much larger and more visible box
-            float boxSize = 15.0f; // Increased size for better visibility
-            ImVec2 boxMin = ImVec2(screenPos.x - boxSize, screenPos.y - boxSize);
-            ImVec2 boxMax = ImVec2(screenPos.x + boxSize, screenPos.y + boxSize);
-
-            // Draw filled background for the box
-            drawList->AddRectFilled(
-                boxMin,
-                boxMax,
-                IM_COL32(0, 0, 0, 180), // Dark background
-                4.0f, // Rounded corners
-                ImDrawFlags_RoundCornersAll
-            );
-
-            // Draw outline
-            drawList->AddRect(
-                boxMin,
-                boxMax,
-                IM_COL32(255, 255, 0, 255), // Yellow outline
-                4.0f,
-                ImDrawFlags_RoundCornersAll,
-                3.0f  // Thicker border
-            );
-
-            // Draw weapon text above the box
-            ImVec2 textPos = ImVec2(screenPos.x - textSize.x / 2, screenPos.y - boxSize - textSize.y - 8);
-
-            // Text background for better readability
-            drawList->AddRectFilled(
-                ImVec2(textPos.x - 4, textPos.y - 2),
-                ImVec2(textPos.x + textSize.x + 4, textPos.y + textSize.y + 2),
-                IM_COL32(0, 0, 0, 200)
-            );
-
-            // Text outline
-            drawList->AddRect(
-                ImVec2(textPos.x - 4, textPos.y - 2),
-                ImVec2(textPos.x + textSize.x + 4, textPos.y + textSize.y + 2),
-                IM_COL32(255, 255, 255, 100),
-                2.0f
-            );
-
-            // Weapon text
-            drawList->AddText(
-                textPos,
-                IM_COL32(255, 255, 0, 255), // Yellow text
-                weaponText
-            );
-
-            // Draw a cross inside the box for better visibility
-            drawList->AddLine(
-                ImVec2(screenPos.x - 5, screenPos.y),
-                ImVec2(screenPos.x + 5, screenPos.y),
-                IM_COL32(255, 255, 255, 255),
-                2.0f
-            );
-            drawList->AddLine(
-                ImVec2(screenPos.x, screenPos.y - 5),
-                ImVec2(screenPos.x, screenPos.y + 5),
-                IM_COL32(255, 255, 255, 255),
-                2.0f
-            );
-        }
-    }
-}
-
-void DebugEnemyWeapons() {
-    auto entities = GetEntities();
-    LocalPlayer lp = GetLocalPlayer();
-
-    std::cout << "=== DEBUG ENEMY WEAPONS ===" << std::endl;
-
-    for (const auto& e : entities) {
-        if (e.health > 0 && e.health <= 100 && e.team != lp.team) {
-            std::cout << "Enemy: " << e.name << std::endl;
-            std::cout << "  Health: " << e.health << std::endl;
-            std::cout << "  Weapon defIndex: " << e.weaponDefIndex << std::endl;
-            std::cout << "  Weapon name: " << GetWeaponName(e.weaponDefIndex) << std::endl;
-            std::cout << "  Ammo: " << e.ammo << std::endl;
-
-            // Debug weapon services
-            uintptr_t weaponServices = ReadMemory<uintptr_t>(e.pawn + 0x10D8);
-            std::cout << "  Weapon Services: 0x" << std::hex << weaponServices << std::dec << std::endl;
-
-            if (weaponServices) {
-                uintptr_t activeWeapon = ReadMemory<uintptr_t>(weaponServices + 0x50);
-                std::cout << "  Active Weapon Handle: 0x" << std::hex << activeWeapon << std::dec << std::endl;
-
-                if (activeWeapon) {
-                    uint32_t weaponHandle = ReadMemory<uint32_t>(activeWeapon);
-                    std::cout << "  Weapon Handle: 0x" << std::hex << weaponHandle << std::dec << std::endl;
-                }
-            }
-            std::cout << "------------------------" << std::endl;
-        }
-    }
-}
-
-void DebugWeaponReading() {
-    auto entities = GetEntities();
-    LocalPlayer lp = GetLocalPlayer();
-
-    for (const auto& e : entities) {
-        if (e.health > 0 && e.health <= 100 && e.team != lp.team) {
-            std::cout << "[DEBUG] Enemy " << e.name << " weapon defIndex: " << e.weaponDefIndex
-                << " -> " << GetWeaponName(e.weaponDefIndex) << std::endl;
-        }
-    }
-}
 
 void RenderSoundESP(Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImDrawList* drawList) {
     if (!soundESPEnabled) return;
@@ -762,33 +615,7 @@ void RenderBacktrackESP(Matrix4x4 viewMatrix, float screenWidth, float screenHei
     }
 }
 
-void RenderAdvancedFlags(Entity& e, ImVec2 boxPos, ImDrawList* drawList, ImU32 color) {
-    if (!showAdvancedFlags) return;
 
-
-    std::vector<std::string> flags;
-    int flagsValue = ReadMemory<int>(e.pawn + m_fFlagsOffset);
-    if (flagsValue & (1 << 0)) flags.push_back("ON GROUND");
-    if (flagsValue & (1 << 1)) flags.push_back("DUCKING");
-    if (flagsValue & (1 << 2)) flags.push_back("JUMPING");
-
-    uintptr_t activeWeapon = ReadMemory<uintptr_t>(e.pawn + activeWeaponOffset);
-    if (activeWeapon) {
-        int currentAmmo = ReadMemory<int>(activeWeapon + ammoOffset);
-        static std::map<uintptr_t, int> previousAmmo;
-        auto it = previousAmmo.find(activeWeapon);
-        if (it != previousAmmo.end() && it->second < currentAmmo) {
-            flags.push_back("RELOADING");
-        }
-        previousAmmo[activeWeapon] = currentAmmo;
-    }
-
-    float yOffset = 0.0f;
-    for (const auto& flag : flags) {
-        DrawTextWithShadow(drawList, ImVec2(boxPos.x, boxPos.y + yOffset), color, flag.c_str());
-        yOffset += 12.0f;
-    }
-}
 
 void RenderVelocityIndicator(Entity& e, ImVec2 boxPos, ImDrawList* drawList, ImU32 color) {
     if (!velocityESPEnabled) return;
@@ -913,21 +740,6 @@ void DrawGameInfoHUD(ImDrawList* drawList, const LocalPlayer& lp, const std::vec
 
         drawList->AddRectFilled(ImVec2(pos.x - 5, pos.y - 2), ImVec2(pos.x + textSize.x + 5, pos.y + textSize.y + 2), IM_COL32(0, 0, 0, 150), 4.0f);
         drawList->AddText(pos, IM_COL32(255, 255, 255, 255), playerInfo);
-
-        yOffset += textSize.y + 10.0f;
-    }
-
-    if (showWeaponInfo && lp.activeWeapon) {
-        char weaponInfo[128];
-        sprintf_s(weaponInfo, "Weapon: %s | Ammo: %d/%d", GetWeaponName(lp.weaponDefIndex), lp.ammo, 0);
-
-        ImVec2 textSize = ImGui::CalcTextSize(weaponInfo);
-        ImVec2 pos(10.0f, yOffset);
-
-        drawList->AddRectFilled(ImVec2(pos.x - 5, pos.y - 2), ImVec2(pos.x + textSize.x + 5, pos.y + textSize.y + 2), IM_COL32(0, 0, 0, 150), 4.0f);
-
-        ImU32 color = lp.ammo > 5 ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 50, 50, 255);
-        drawList->AddText(pos, color, weaponInfo);
 
         yOffset += textSize.y + 10.0f;
     }
@@ -1276,20 +1088,7 @@ void RenderESP() {
 
     static float lastShotTime = 0.0f;
     static int prevClipAmmo = 999;  // High initial to detect first shot
-    if (lp.health > 0 && lp.pawn && lp.activeWeapon) {
-        int currentClipAmmo = lp.ammo;
-
-        if (currentClipAmmo < prevClipAmmo) {  // Fired! (ammo -1)
-            lastShotTime = ImGui::GetTime();
-            debugLog += "[SHOT] Detected via clip: " + std::to_string(prevClipAmmo) + " ? " + std::to_string(currentClipAmmo) + "\n";
-        }
-        else if (currentClipAmmo > prevClipAmmo + 5) {  // Reloaded (big jump, e.g., 0?30)
-            prevClipAmmo = currentClipAmmo;
-            debugLog += "[RELOAD] Reset clip tracker to " + std::to_string(currentClipAmmo) + "\n";
-        }
-
-        prevClipAmmo = currentClipAmmo;  // ALWAYS update tracker
-    }
+    
 
 
     Matrix4x4 viewMatrix = ReadMemory<Matrix4x4>(clientBase + viewMatrixOffset);
@@ -1350,7 +1149,6 @@ void RenderESP() {
         }
     }
 
-    RenderWeaponESP(GetDroppedWeapons(), viewMatrix, screenWidth, screenHeight, drawList);
     RenderSoundESP(viewMatrix, screenWidth, screenHeight, drawList);
     RenderBacktrackESP(viewMatrix, screenWidth, screenHeight, drawList);
 
@@ -1487,17 +1285,23 @@ void RenderESP() {
                 DrawTextWithShadow(drawList, ImVec2(x, boxTop - 20), boxColor, e.name);
             }
 
-            // WEAPON TEXT ESP  
-            if (weaponTextESPEnabled) {
-                char weaponText[64];
-                if (ammoEnabled && e.ammo > 0) {
-                    sprintf_s(weaponText, "%s [%d]", GetWeaponName(e.weaponDefIndex), e.ammo);
+            if (weaponESPEnabled && e.weaponName[0] != '\0') {
+                // Calculate Y position: Start at bottom
+                float textY = boxBottom + 5;
+
+                // If distance text is enabled, move weapon text below it
+                if (distanceTextEnabled) {
+                    textY += 12;
                 }
-                else {
-                    sprintf_s(weaponText, "%s", GetWeaponName(e.weaponDefIndex));
+
+                // If flags are enabled, move weapon text further down (rough estimation)
+                if (flagsEnabled) {
+                    textY += 12;
                 }
-                DrawTextWithShadow(drawList, ImVec2(x, boxTop - 35), boxColor, weaponText);
+
+                DrawTextWithShadow(drawList, ImVec2(x, textY), boxColor, e.weaponName);
             }
+
 
             // HEALTH BAR & TEXT
             if (healthBarEnabled || healthTextEnabled) {
@@ -1622,7 +1426,6 @@ void RenderESP() {
             }
 
             // ADVANCED FLAGS & VELOCITY INDICATOR
-            RenderAdvancedFlags(e, ImVec2(x, boxBottom + 40), drawList, boxColor);
             RenderVelocityIndicator(e, ImVec2(x, boxBottom + 25), drawList, boxColor);
 
             // BONE ESP

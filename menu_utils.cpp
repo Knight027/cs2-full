@@ -180,9 +180,11 @@ bool CustomCheckbox(const char* label, bool* v) {
     const ImGuiID id = window->GetID(label);
     const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
 
+    // Layout
     float height = ImGui::GetFrameHeight();
-    float width = height * 1.65f;
-    const ImRect total_bb(window->DC.CursorPos, ImVec2(window->DC.CursorPos.x + width + label_size.x + style.ItemInnerSpacing.x, window->DC.CursorPos.y + height));
+    float width = height * 1.8f; // Wider for switch look
+    const ImVec2 pos = window->DC.CursorPos;
+    const ImRect total_bb(pos, ImVec2(pos.x + width + (label_size.x > 0 ? style.ItemInnerSpacing.x + label_size.x : 0), pos.y + height));
 
     ImGui::ItemSize(total_bb, style.FramePadding.y);
     if (!ImGui::ItemAdd(total_bb, id)) return false;
@@ -194,36 +196,39 @@ bool CustomCheckbox(const char* label, bool* v) {
         ImGui::MarkItemEdited(id);
     }
 
+    // Animation Logic
+    static std::map<ImGuiID, float> animMap;
     float t = *v ? 1.0f : 0.0f;
-    float anim = ImGui::GetStateStorage()->GetFloat(id, *v ? 1.0f : 0.0f);
-    if (g.LastActiveId == id) {
-        float t_anim = ImGui::GetIO().DeltaTime * 10.0f;
-        if (anim < t) anim += t_anim;
-        if (anim > t) anim -= t_anim;
-    }
-    else {
-        anim = t;
-    }
-    ImGui::GetStateStorage()->SetFloat(id, anim);
-    anim = ImClamp(anim, 0.0f, 1.0f);
+    float anim = animMap[id];
 
-    ImRect check_bb(total_bb.Min, ImVec2(total_bb.Min.x + width, total_bb.Max.y));
-    ImVec4 bg_col = LerpColor(ImVec4(0.15f, 0.15f, 0.15f, 0.6f), themeAccent, anim);
-    ImVec4 circle_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    // Smooth lerp for the switch
+    float dt = ImGui::GetIO().DeltaTime * 12.0f; // Speed
+    if (anim < t) anim = ImMin(anim + dt, t);
+    if (anim > t) anim = ImMax(anim - dt, t);
+    animMap[id] = anim;
 
-    window->DrawList->AddRectFilled(check_bb.Min, check_bb.Max, ImGui::GetColorU32(bg_col), height);
+    // Colors
+    ImVec4 bg_inactive = ImVec4(0.15f, 0.15f, 0.15f, 1.0f);
+    ImVec4 bg_active = themeAccent;
+    ImVec4 bg_col = LerpColor(bg_inactive, bg_active, anim);
 
-    float circle_pad = 3.0f;
-    float circle_sz = height - (circle_pad * 2);
-    float circle_x_start = check_bb.Min.x + circle_pad;
-    float circle_x_end = check_bb.Max.x - circle_pad - circle_sz;
-    float circle_x = circle_x_start + (circle_x_end - circle_x_start) * anim;
+    // Draw Switch Background (Rounded Pill)
+    ImRect check_bb(pos, ImVec2(pos.x + width, pos.y + height));
+    window->DrawList->AddRectFilled(check_bb.Min, check_bb.Max, ImGui::GetColorU32(bg_col), height * 0.5f);
 
-    window->DrawList->AddCircleFilled(ImVec2(circle_x + circle_sz / 2, check_bb.GetCenter().y), circle_sz / 2, ImGui::GetColorU32(circle_col));
+    // Draw Switch Circle (Knob)
+    float pad = 3.0f;
+    float circle_sz = height - (pad * 2);
+    float circle_x_start = check_bb.Min.x + pad + (circle_sz * 0.5f);
+    float circle_x_end = check_bb.Max.x - pad - (circle_sz * 0.5f);
+    float circle_x = circle_x_start + (circle_x_end - circle_x_start) * EaseInOutCubic(anim); // Use cubic ease
 
+    window->DrawList->AddCircleFilled(ImVec2(circle_x, check_bb.GetCenter().y), circle_sz * 0.5f, IM_COL32(255, 255, 255, 255));
+
+    // Draw Label
     if (label_size.x > 0.0f) {
-        ImU32 text_col = hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 200, 200, 255);
-        window->DrawList->AddText(ImVec2(check_bb.Max.x + style.ItemInnerSpacing.x, check_bb.Min.y + style.FramePadding.y), text_col, label);
+        ImVec4 text_col = hovered ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : themeText;
+        window->DrawList->AddText(ImVec2(check_bb.Max.x + style.ItemInnerSpacing.x, check_bb.Min.y + style.FramePadding.y), ImGui::GetColorU32(text_col), label);
     }
 
     return pressed;
@@ -606,10 +611,8 @@ void SaveConfig(const std::string& filename) {
         file << "showTeammates=" << showTeammates << "\n";
         file << "glowThroughWalls=" << glowThroughWalls << "\n";
         file << "nameESPEnabled=" << nameESPEnabled << "\n";
-        file << "weaponTextESPEnabled=" << weaponTextESPEnabled << "\n";
         file << "armorBarEnabled=" << armorBarEnabled << "\n";
         file << "distanceTextEnabled=" << distanceTextEnabled << "\n";
-        file << "weaponESPEnabled=" << weaponESPEnabled << "\n";
         file << "soundESPEnabled=" << soundESPEnabled << "\n";
         file << "backtrackESPEnabled=" << backtrackESPEnabled << "\n";
         file << "velocityESPEnabled=" << velocityESPEnabled << "\n";
@@ -690,14 +693,12 @@ void SaveConfig(const std::string& filename) {
         file << "headCircleColor=" << format_color(headCircleColor) << "\n";
         file << "glowColor=" << format_color(glowColor) << "\n";
         file << "fovCircleColor=" << format_color(fovCircleColor) << "\n";
-        file << "weaponColor=" << format_color(weaponColor) << "\n";
         file << "wireframeVisibleColor=" << format_color(wireframeVisibleColor) << "\n";
         file << "wireframeInvisibleColor=" << format_color(wireframeInvisibleColor) << "\n";
         file << "backtrackESPColor=" << format_color(backtrackESPColor) << "\n";
         file << "soundESPColor=" << format_color(soundESPColor) << "\n";
         file << "espTextColor=" << format_color(espTextColor) << "\n";
         file << "espIconColor=" << format_color(espIconColor) << "\n";
-        file << "espWeaponColor=" << format_color(espWeaponColor) << "\n";
         file << "espDistanceColor=" << format_color(espDistanceColor) << "\n";
         file << "skeletonStartColor=" << format_color(skeletonStartColor) << "\n";
         file << "skeletonEndColor=" << format_color(skeletonEndColor) << "\n";
@@ -778,7 +779,6 @@ void SaveConfig(const std::string& filename) {
         file << "showFPS=" << showFPS << "\n";
         file << "showPosition=" << showPosition << "\n";
         file << "showVelocity=" << showVelocity << "\n";
-        file << "showWeaponInfo=" << showWeaponInfo << "\n";
         file << "showSpectators=" << showSpectators << "\n";
         file << "showGameTime=" << showGameTime << "\n";
         file << "showKeysPressed=" << showKeysPressed << "\n";
@@ -892,10 +892,8 @@ void LoadConfig(const std::string& filename) {
             PARSE_VAR(showTeammates, bool);
             PARSE_VAR(glowThroughWalls, bool);
             PARSE_VAR(nameESPEnabled, bool);
-            PARSE_VAR(weaponTextESPEnabled, bool);
             PARSE_VAR(armorBarEnabled, bool);
             PARSE_VAR(distanceTextEnabled, bool);
-            PARSE_VAR(weaponESPEnabled, bool);
             PARSE_VAR(soundESPEnabled, bool);
             PARSE_VAR(backtrackESPEnabled, bool);
             PARSE_VAR(velocityESPEnabled, bool);
@@ -976,14 +974,12 @@ void LoadConfig(const std::string& filename) {
             PARSE_COLOR(headCircleColor);
             PARSE_COLOR(glowColor);
             PARSE_COLOR(fovCircleColor);
-            PARSE_COLOR(weaponColor);
             PARSE_COLOR(wireframeVisibleColor);
             PARSE_COLOR(wireframeInvisibleColor);
             PARSE_COLOR(backtrackESPColor);
             PARSE_COLOR(soundESPColor);
             PARSE_COLOR(espTextColor);
             PARSE_COLOR(espIconColor);
-            PARSE_COLOR(espWeaponColor);
             PARSE_COLOR(espDistanceColor);
             PARSE_COLOR(skeletonStartColor);
             PARSE_COLOR(skeletonEndColor);
@@ -1088,7 +1084,6 @@ void LoadConfig(const std::string& filename) {
             PARSE_VAR(showFPS, bool);
             PARSE_VAR(showPosition, bool);
             PARSE_VAR(showVelocity, bool);
-            PARSE_VAR(showWeaponInfo, bool);
             PARSE_VAR(showSpectators, bool);
             PARSE_VAR(showGameTime, bool);
             PARSE_VAR(showKeysPressed, bool);

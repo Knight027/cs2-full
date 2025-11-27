@@ -74,6 +74,13 @@ uintptr_t m_nFallbackPaintKitOffset = 0; // m_nFallbackPaintKit
 uintptr_t m_flFallbackWearOffset = 0; // m_flFallbackWear
 uintptr_t m_nFallbackSeedOffset = 0; // m_nFallbackSeed
 uintptr_t m_nFallbackStatTrakOffset = 0; // m_nFallbackStatTrak
+uintptr_t drawObjectAddr = 0;
+uintptr_t createMaterialAddr = 0;
+uintptr_t setTypeKV3Addr = 0;
+uintptr_t loadKeyValuesAddr = 0;
+CreateMaterialFn oCreateMaterial = nullptr;
+LoadKeyValuesFn oLoadKeyValues = nullptr;
+SetTypeKV3Fn oSetTypeKV3 = nullptr;
 int offsetToIsGlowing = 0;
 int offsetToGlowSceneObjectEntity = 0;
 int offsetToGlowSceneObjectAttachedSceneObject = 0;
@@ -444,6 +451,61 @@ bool LoadOffsets() {
     }
     else {
         debugLog += "[ERROR] Failed to find PopupAcceptMatchFound pattern\n";
+    }
+
+    std::string drawObjectPat = "48 8B C4 53 57 41 54";
+    drawObjectAddr = PatternScan("scenesystem.dll", drawObjectPat.c_str());
+    if (drawObjectAddr) {
+        debugLog += "[DEBUG] DrawObject found at: 0x" + std::to_string(drawObjectAddr) + "\n";
+    }
+    else {
+        debugLog += "[ERROR] DrawObject pattern not found\n";
+    }
+
+    // 2. CreateMaterial (MaterialSystem2)
+    std::string createMaterialPat = "48 89 5C 24 ? 48 89 6C 24 ? 56 57 41 56 48 81 EC ? ? ? ? 48 8B 05";
+    createMaterialAddr = PatternScan("materialsystem2.dll", createMaterialPat.c_str());
+    if (createMaterialAddr) {
+        oCreateMaterial = (CreateMaterialFn)createMaterialAddr;
+        debugLog += "[DEBUG] CreateMaterial found at: 0x" + std::to_string(createMaterialAddr) + "\n";
+    }
+
+    // 3. SetTypeKV3 (Client/Tier0 - usually client for this specific sig)
+    std::string setTypeKV3Pat = "40 53 48 83 EC ? 4C 8B 11 41 B9";
+    setTypeKV3Addr = PatternScan("tier0.dll", setTypeKV3Pat.c_str());
+    if (setTypeKV3Addr) {
+        oSetTypeKV3 = (SetTypeKV3Fn)setTypeKV3Addr;
+        debugLog += "[DEBUG] SetTypeKV3 found at: 0x" + std::to_string(setTypeKV3Addr) + "\n";
+    }
+
+    // 4. LoadKeyValues (Client/Tier0)
+    std::string loadKeyValuesPat = "E8 ? ? ? ? EB ? F7 43";
+    // Note: This pattern often points to a CALL instruction, need to resolve relative
+    uintptr_t loadKVSig = PatternScan("tier0.dll", loadKeyValuesPat.c_str());
+    if (loadKVSig) {
+        loadKeyValuesAddr = ResolveRelative(loadKVSig, 1, 5);
+        oLoadKeyValues = (LoadKeyValuesFn)loadKeyValuesAddr;
+        debugLog += "[DEBUG] LoadKeyValues resolved to: 0x" + std::to_string(loadKeyValuesAddr) + "\n";
+    }
+
+    std::string matSysSig = "48 8D 05 ? ? ? ? 48 85 C9 74";
+    uintptr_t matSysAddr = PatternScan("materialsystem2.dll", matSysSig.c_str());
+
+    if (matSysAddr) {
+        // Resolve the RIP-relative address to get the ADDRESS of the global pointer
+        uintptr_t ptrToGlobal = ResolveRelative(matSysAddr, 3, 7);
+        
+        // Read the actual pointer value (dereference it)
+        if (ptrToGlobal && IsValidPtr((void*)ptrToGlobal)) {
+            g_pMaterialSystem = *(void**)ptrToGlobal;
+            debugLog += "[DEBUG] MaterialSystem Interface found at: " + std::to_string((uintptr_t)g_pMaterialSystem) + "\n";
+        } else {
+            g_pMaterialSystem = nullptr;
+            debugLog += "[ERROR] MaterialSystem pointer location invalid\n";
+        }
+    } else {
+        g_pMaterialSystem = nullptr;
+        debugLog += "[WARNING] MaterialSystem pattern not found. Chams disabled.\n";
     }
 
     clientBase = (uintptr_t)GetModuleHandleA("client.dll");

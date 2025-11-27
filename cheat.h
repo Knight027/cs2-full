@@ -102,7 +102,6 @@ struct Entity {
     uint8_t team;
     char name[64];
     uintptr_t boneMatrix;
-    int weaponDefIndex;
     int ammo;
     int armor;
     bool hasDefuser;
@@ -114,6 +113,7 @@ struct Entity {
     int lastHitGroup;
     uintptr_t pawn;
     uint64_t spottedByMask; // NEW: For proper visibility check
+    char weaponName[64];
 };
 struct LocalPlayer {
     Vector3 origin;
@@ -121,18 +121,12 @@ struct LocalPlayer {
     int index;
     uintptr_t pawn;
     Vector3 viewAngles;
-    uintptr_t activeWeapon; // New: Active weapon pointer
     int ammo; // New: Current ammo in clip
     int health;
     int armor;
-    int weaponDefIndex;
     char name[64];
     int shotsFired;
     bool scoped;
-};
-struct WeaponEntity {
-    Vector3 origin;
-    int defIndex;
 };
 enum ESPBoxStyle {
     ESP_BOX_STANDARD = 0,
@@ -208,7 +202,6 @@ extern uintptr_t viewMatrixOffset;
 extern uintptr_t clientBase;
 extern uintptr_t sceneNodeOffset;
 extern uintptr_t boneMatrixOffset;
-extern uintptr_t activeWeaponOffset;
 extern uintptr_t itemDefIndexOffset;
 extern uintptr_t ownerEntityOffset;
 extern uintptr_t playerNameOffset;
@@ -300,7 +293,6 @@ extern bool customCrosshairEnabled;
 extern bool showFPS;
 extern bool showPosition;
 extern bool showVelocity;
-extern bool showWeaponInfo;
 extern bool showSpectators;
 extern bool showGameTime;
 extern bool showKeysPressed;
@@ -347,12 +339,10 @@ extern bool showMenuKeybind;
 extern bool keyRecorded;
 extern bool wireframeBoneESPEnabled;
 extern bool nameESPEnabled;
-extern bool weaponTextESPEnabled;
 extern bool box2DEnabled;
 extern bool skeletonEnabled;
 extern bool armorBarEnabled;
 extern bool distanceTextEnabled;
-extern bool weaponESPEnabled;
 extern bool soundESPEnabled;
 extern bool backtrackESPEnabled;
 extern bool velocityESPEnabled;
@@ -444,7 +434,6 @@ extern ImVec4 headCircleColor;
 extern ImVec4 glowColor;
 extern ImVec4 crosshairColor;
 extern ImVec4 fovCircleColor;
-extern ImVec4 weaponColor;
 extern ImVec4 soundESPColor;
 extern ImVec4 backtrackESPColor;
 extern ImVec4 velocityIndicatorColor;
@@ -453,7 +442,6 @@ extern ImVec4 wireframeVisibleColor;  // Green for visible
 extern ImVec4 wireframeInvisibleColor;  // Red for invisible
 extern ImVec4 espTextColor;
 extern ImVec4 espIconColor;
-extern ImVec4 espWeaponColor;
 extern ImVec4 espDistanceColor;
 extern ImVec4 espBoxFillColor;
 extern ImVec4 espBoxGradientTop;
@@ -568,8 +556,6 @@ inline uintptr_t GetAbsoluteAddress(uintptr_t instruction_ptr, int offset, int s
 
 
 
-extern float weaponMaxDistance;
-extern ImVec4 weaponColor;
 
 extern float soundMaxTime;
 extern std::map<Vector3, float> soundLocations;
@@ -583,8 +569,6 @@ extern bool autoStrafeEnabled;
 extern float strafeSpeed;
 
 // Add these function declarations
-void RenderWeaponESP(const std::vector<WeaponEntity>& weapons, Matrix4x4 viewMatrix,
-    float screenWidth, float screenHeight, ImDrawList* drawList);
 void ProcessSounds();
 void RenderSoundESP(Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImDrawList* drawList);
 void RenderAdvancedFlags(Entity& e, ImVec2 boxPos, ImDrawList* drawList, ImU32 color);
@@ -767,6 +751,47 @@ extern bool propModEnabled;
 
 
 
+// In cheat.h, under the Globals section:
+extern bool pSilentEnabled;
+extern float pSilentFOV;
+
+// In cheat.h, under Function Declarations:
+// We need a function to get the best target specifically for the Hook
+Entity* GetBestTargetForSilent(const LocalPlayer& lp, const std::vector<Entity>& entities);
+
+
+
+class CUserCmdBase {
+public:
+    char pad_0x0000[0x40];
+    Vector3 viewAngles;
+};
+
+class CUserCmd {
+public:
+    char pad_0x0000[0x20];
+    CUserCmdBase* base;    
+};
+
+class CCSGOInput {
+public:
+    char pad_0x0000[0x250]; 
+    CUserCmd commands[150]; 
+
+    CUserCmd* GetCmd(int sequence_number) {
+        return &commands[sequence_number % 150];
+    }
+};
+
+
+
+
+extern bool weaponESPEnabled; // [Added] Toggle for weapon ESP
+
+// In Function Declarations:
+const char* GetWeaponNameById(int id); // [Added] Helper function
+extern uintptr_t activeWeaponOffset;
+
 
 
 extern bool deSubtickEnabled;
@@ -857,6 +882,50 @@ extern FrameStageNotifyFn oFrameStageNotify;
 void __fastcall HK_FrameStageNotify(void* thisptr, int stage);
 
 
+
+
+
+
+
+
+extern bool chamsEnabled;
+extern bool chamsIgnoreZ; // Visible through walls
+extern ImVec4 chamsColor;
+extern ImVec4 chamsInvisibleColor;
+extern bool chamsWireframe;
+
+// [Add to Function Pointers/Typedefs]
+// SceneSystem DrawObject
+typedef void(__fastcall* DrawObjectFn)(void* thisptr, void* sceneObject, void* material, void* renderContext, void* unk, void* unk2);
+extern DrawObjectFn oDrawObject;
+
+// Material System
+typedef void* (__fastcall* CreateMaterialFn)(void* resourceSystem, const char* name, void* keyValues, void* unk, bool unk2); 
+extern CreateMaterialFn oCreateMaterial;
+
+// KeyValues3
+typedef void* (__fastcall* LoadKeyValuesFn)(const char* kv3String);
+typedef void(__fastcall* SetTypeKV3Fn)(void* kv3, int type);
+
+extern LoadKeyValuesFn oLoadKeyValues;
+extern SetTypeKV3Fn oSetTypeKV3;
+
+// Addresses
+extern uintptr_t drawObjectAddr;
+extern uintptr_t createMaterialAddr;
+extern uintptr_t setTypeKV3Addr;
+extern uintptr_t loadKeyValuesAddr;
+
+// [Add to Function Declarations]
+bool SetupDrawObjectHook();
+void __fastcall HK_DrawObject(void* thisptr, void* sceneObject, void* material, void* renderContext, void* unk, void* unk2);
+void InitializeChamsMaterials();
+
+extern void* customMaterial;
+extern void* customMaterialInvisible;
+
+extern void* g_pMaterialSystem;
+extern void* g_pMaterialSystem;
 
 
 
@@ -1117,8 +1186,6 @@ Vector3 GetBonePosition(uintptr_t boneMatrix, int boneIndex);
 Vector3 ClampAngle(Vector3 angle);
 LocalPlayer GetLocalPlayer();
 std::vector<Entity> GetEntities();
-std::vector<WeaponEntity> GetDroppedWeapons();
-const char* GetWeaponName(int defIndex);
 void Render3DBox(Entity& e, Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImDrawList* drawList, ImU32 color);
 void RenderRadar(const LocalPlayer& lp, const std::vector<Entity>& entities, ImDrawList* drawList, float screenWidth, float screenHeight);
 void RunAimbot();
@@ -1134,7 +1201,6 @@ void RunExternalAimbot();
 void RenderExternalAimbotFOV(ImDrawList* drawList, float screenWidth, float screenHeight);
 void RunFOVChanger();
 void DrawWireframeBone(ImDrawList* drawList, const Vector3& start3D, const Vector3& end3D, Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImU32 color, float radius, int numSides, int numRings);
-std::vector<WeaponEntity> GetDroppedWeapons();
 void DrawWireframeSphere(ImDrawList* drawList, const Vector3& center, float radius, Matrix4x4 viewMatrix, float screenWidth, float screenHeight, ImU32 color, int numMeridians, int numParallels);
 DWORD WINAPI KeyThread(LPVOID param);
 LRESULT CALLBACK hkWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
