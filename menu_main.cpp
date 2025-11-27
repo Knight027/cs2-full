@@ -89,7 +89,6 @@ void RenderCleanMenu() {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 center = ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
     float scale = Lerp(0.95f, 1.0f, EaseOutBack(alpha));
-    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
     // Flags: NoDecoration removes the OS title bar and default ImGui background borders
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground;
