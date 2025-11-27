@@ -25,7 +25,6 @@ UpdateAccuracyPenaltyFn oUpdateAccuracyPenalty = nullptr;
 CreateSubtickMoveStepFn oCreateSubtickMoveStep = nullptr;
 RenderLegsFn oRenderLegs = nullptr;
 FrameStageNotifyFn oFrameStageNotify = nullptr;
-DrawObjectFn oDrawObject = nullptr;
 
 // For saving/restoring mouse mode
 SDL_bool savedRelativeMouseMode = SDL_FALSE;
@@ -33,25 +32,6 @@ SDL_bool savedGrabMode = SDL_FALSE;
 
 
 
-bool SetupDrawObjectHook() {
-    if (!drawObjectAddr) {
-        debugLog += "[ERROR] DrawObject address not found\n";
-        return false;
-    }
-
-    if (MH_CreateHook((LPVOID)drawObjectAddr, &HK_DrawObject, (LPVOID*)&oDrawObject) != MH_OK) {
-        debugLog += "[ERROR] Failed to create DrawObject hook\n";
-        return false;
-    }
-
-    if (MH_EnableHook((LPVOID)drawObjectAddr) != MH_OK) {
-        debugLog += "[ERROR] Failed to enable DrawObject hook\n";
-        return false;
-    }
-
-    debugLog += "[DEBUG] DrawObject hook set up successfully\n";
-    return true;
-}
 
 
 bool SetupRenderLegsHook() {
@@ -584,9 +564,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             }
             if (!SetupPopupAcceptMatchHook()) {
                 std::cout << "[WARNING] PopupAcceptMatchFound hook failed, auto accept will not work" << std::endl;
-            }
-            if (!SetupDrawObjectHook()) {
-                std::cout << "[WARNING] DrawObject hook failed, Chams will not work" << std::endl;
             }
 
             CreateThread(NULL, 0, KeyThread, NULL, 0, NULL);
