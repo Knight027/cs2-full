@@ -90,7 +90,6 @@ void RenderCleanMenu() {
     ImVec2 center = ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
     float scale = Lerp(0.95f, 1.0f, EaseOutBack(alpha));
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(750 * scale, 550 * scale));
 
     // Flags: NoDecoration removes the OS title bar and default ImGui background borders
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground;
@@ -111,6 +110,7 @@ void RenderCleanMenu() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, themeWindowRounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
+    ImGui::SetNextWindowSize(ImVec2(920, 780), ImGuiCond_FirstUseEver);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
 
     if (ImGui::Begin("##CS2WoW", &menuOpen, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar)) {
