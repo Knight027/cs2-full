@@ -9,7 +9,7 @@
 
 ⚠️ DISCLAIMER: This software is for educational and research purposes only. I am not responsible for any bans (VAC, game bans) or damages caused by using this software. Use at your own risk.
 
-(put the Ofssets.TXT file in the C:\ Directory)
+(put the Offsets.TXT file in the C:\ Directory)
 
 ✨ Features
 
