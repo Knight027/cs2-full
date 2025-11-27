@@ -97,7 +97,7 @@ void RenderCleanMenu() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, themeWindowRounding);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
-    ImGui::SetNextWindowSize(ImVec2(920, 780), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(920, 780));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
 
     if (ImGui::Begin("##CS2WoW", &menuOpen, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar)) {
