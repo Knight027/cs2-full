@@ -83,7 +83,3 @@ ImGui
 
 MinHook
 
-
-📞 Contact
-
-DC: dion.rsh
